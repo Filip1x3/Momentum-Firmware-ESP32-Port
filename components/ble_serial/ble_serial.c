@@ -883,11 +883,12 @@ static esp_err_t serial_stack_init_once(void) {
     serial_unlock_global();
 
     err = nvs_flash_init();
-    if(err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
+    if(err != ESP_OK) {
+        /* Shared NVS also contains PIN/U2F identity. A radio startup failure
+         * must never erase it (nor write flash from this PSRAM-stack task). */
+        ESP_LOGE(TAG, "NVS init failed (%d); stored identity preserved", err);
+        return err;
     }
-    if(err != ESP_OK) return err;
 
     err = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) return err;

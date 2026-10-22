@@ -126,7 +126,9 @@ bool momentum_app_apply(MomentumApp* app) {
 
     if(app->show_slideshow) {
         callback_reboot(NULL);
-    } else if(app->require_reboot) {
+    } else if(app->require_reboot || app->apply_pack) {
+        /* Menu IconAnimations and GUI font pointers can outlive this app.
+         * Reboot after saving instead of freeing assets underneath those readers. */
         popup_set_header(app->popup, "Rebooting...", 64, 26, AlignCenter, AlignCenter);
         popup_set_text(app->popup, "Applying changes...", 64, 40, AlignCenter, AlignCenter);
         popup_set_callback(app->popup, callback_reboot);
@@ -135,16 +137,6 @@ bool momentum_app_apply(MomentumApp* app) {
         popup_enable_timeout(app->popup);
         view_dispatcher_switch_to_view(app->view_dispatcher, MomentumAppViewPopup);
         return true;
-    } else if(app->apply_pack) {
-        asset_packs_free();
-        popup_set_header(app->popup, "Reloading...", 64, 26, AlignCenter, AlignCenter);
-        popup_set_text(app->popup, "Applying asset pack...", 64, 40, AlignCenter, AlignCenter);
-        popup_set_callback(app->popup, NULL);
-        popup_set_context(app->popup, NULL);
-        popup_set_timeout(app->popup, 0);
-        popup_disable_timeout(app->popup);
-        view_dispatcher_switch_to_view(app->view_dispatcher, MomentumAppViewPopup);
-        asset_packs_init();
     }
     return false;
 }

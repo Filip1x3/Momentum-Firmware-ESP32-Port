@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 
+option(MOMENTUM_DUALBOOT "Build the T-Embed CC1101 Bruce companion profile" OFF)
+if(MOMENTUM_DUALBOOT)
+    if(NOT FLIPPER_BOARD STREQUAL "lilygo_t_embed_cc1101")
+        message(FATAL_ERROR "Dual boot is only supported on LilyGo T-Embed CC1101")
+    endif()
+    add_compile_definitions(MOMENTUM_DUALBOOT=1)
+endif()
+set(ENV{MOMENTUM_DUALBOOT} "${MOMENTUM_DUALBOOT}")
+
 set(EXTRA_COMPONENT_DIRS "components")
 
 # ---------------------------------------------------------------------------
@@ -47,6 +56,9 @@ if(NOT PROJECT_VER)
     message(FATAL_ERROR "FURI_ESP32_VERSION not found in components/toolbox/fw_version.h")
 endif()
 message(STATUS "Firmware version (PROJECT_VER): ${PROJECT_VER}")
+if(MOMENTUM_DUALBOOT)
+    string(APPEND PROJECT_VER "-db1")
+endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(furi_esp32)

@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "btshim.c"
+        "bt_stack_lifecycle.c"
         "bt_settings.c"
         "bt_keys_storage.c"
         "bt_settings_app.c"

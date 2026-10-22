@@ -8,6 +8,7 @@ idf_component_register(
         "args.c"
         "dir_walk.c"
         "compress.c"
+        "asset_file.c"
         "uzlib/tinflate.c"
         "uzlib/tinfgzip.c"
         "uzlib/crc32.c"

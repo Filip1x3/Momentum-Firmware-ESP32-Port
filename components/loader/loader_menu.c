@@ -607,7 +607,11 @@ static void loader_menu_build_misc(LoaderMenuApp* app) {
 static void loader_menu_build_submenu(LoaderMenuApp* app) {
     static const char* const order[] = {
         "Bluetooth", "LCD and Notifications", "Storage", "Power", "Desktop",
-        "Passport", "System", "Clock & Alarm", "About",
+        "Passport", "System", "Clock & Alarm",
+#ifdef MOMENTUM_DUALBOOT
+        "Dual Boot",
+#endif
+        "About",
     };
     submenu_reset(app->settings_menu);
     for(size_t position = 0; position < COUNT_OF(order); position++) {

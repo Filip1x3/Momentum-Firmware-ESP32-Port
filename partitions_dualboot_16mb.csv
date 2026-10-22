@@ -1,0 +1,11 @@
+# Local dual-boot profile. Never use the inactive app slot for OTA updates.
+# Existing Momentum NVS (including U2F keys) stays at its original address.
+# Name,     Type, SubType,   Offset,    Size,      Flags
+nvs,        data, nvs,       0x9000,    0x6000,
+phy_init,   data, phy,       0xF000,    0x1000,
+ota_0,      app,  ota_0,     0x10000,   0x5F0000,
+ota_1,      app,  ota_1,     0x600000,  0x5F0000,
+otadata,    data, ota,       0xBF0000,  0x2000,
+coredump,   data, coredump,  0xBF2000,  0x20000,
+bruce_nvs,  data, nvs,       0xC12000,  0x10000,
+spiffs,     data, spiffs,    0xC22000,  0x3DE000,

@@ -156,13 +156,10 @@ static bool sd_remove_recursive(const char* path) {
 
 FS_Error sd_unmount_card(StorageData* storage) {
     SDData* sd_data = storage->data;
-    SDError error;
-
-    storage->status = StorageStatusNotReady;
-    error = FR_DISK_ERR;
-
-    // TODO FL-3522: do i need to close the files?
-    f_mount(0, sd_data->path, 0);
+    /* storage_process_sd_unmount checks that no file handles remain. Preserve
+     * the mounted status on failure so MSC cannot take over a live volume. */
+    SDError error = f_mount(0, sd_data->path, 0);
+    if(error == FR_OK) storage->status = StorageStatusNotReady;
 
     return storage_ext_parse_error(error);
 }

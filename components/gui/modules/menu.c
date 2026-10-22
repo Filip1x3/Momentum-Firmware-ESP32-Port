@@ -600,9 +600,10 @@ void menu_free(Menu* menu) {
     furi_check(menu);
 
     menu_reset(menu);
+    furi_timer_stop(menu->scroll_timer);
+    furi_timer_free(menu->scroll_timer);
     with_view_model(menu->view, MenuModel* model, { MenuItemArray_clear(model->items); }, false);
     view_free(menu->view);
-    furi_timer_free(menu->scroll_timer);
 
     free(menu);
 }

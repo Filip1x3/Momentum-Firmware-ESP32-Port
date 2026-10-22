@@ -117,10 +117,8 @@ void nfc_scene_detect_scan_callback(NfcScannerEvent event, void* context) {
 void nfc_scene_detect_on_enter(void* context) {
     NfcApp* instance = context;
 
-    nfc_show_loading_popup(instance, true);
-    nfc_supported_cards_load_cache(instance->nfc_supported_cards);
-    nfc_show_loading_popup(instance, false);
-
+    /* Card parser plugins are only needed once a card has been read. Start
+     * detection immediately; nfc_supported_cards_parse loads them on demand. */
     nfc_detected_protocols_reset(instance->detected_protocols);
     nfc_scene_detect_build_view(instance);
 

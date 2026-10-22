@@ -336,6 +336,13 @@ BubbleAnimationView* bubble_animation_view_alloc(void) {
 void bubble_animation_view_free(BubbleAnimationView* view) {
     furi_assert(view);
 
+    /* Flush pending callbacks before their view/model/context can disappear. */
+    furi_timer_stop(view->timer);
+    furi_timer_free(view->timer);
+    BubbleAnimationViewModel* model = view_get_model(view->view);
+    if(model->freeze_frame) bubble_animation_release_frame(&model->freeze_frame);
+    view_commit_model(view->view, false);
+
     view_set_draw_callback(view->view, NULL);
     view_set_input_callback(view->view, NULL);
     view_set_context(view->view, NULL);
@@ -364,6 +371,7 @@ void bubble_animation_view_set_animation(
     BubbleAnimationViewModel* model = view_get_model(view->view);
     furi_assert(model);
     model->current = new_animation;
+    model->active_shift = 0;
 
     model->active_ended_at = furi_get_tick() - (model->current->active_cooldown * 1000);
     model->active_bubbles = 0;

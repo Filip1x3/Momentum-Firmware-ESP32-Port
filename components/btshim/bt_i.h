@@ -41,6 +41,7 @@ typedef enum {
     BtMessageTypeReloadKeysSettings,
     BtMessageTypeStopStack,
     BtMessageTypeStartStack,
+    BtMessageTypeRestoreDefault,
 } BtMessageType;
 
 typedef struct {

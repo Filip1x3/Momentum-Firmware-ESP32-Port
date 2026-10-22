@@ -88,6 +88,8 @@ APPS = [
 
 # Boards without NFC / IR hardware – exclude the corresponding apps
 _board = os.environ.get("FLIPPER_BOARD", "")
+if os.environ.get("MOMENTUM_DUALBOOT") == "ON" and _board == "lilygo_t_embed_cc1101":
+    APPS.append("dualboot_settings")
 if _board != "lilygo_t_embed_cc1101":
     APPS = [a for a in APPS if a != "u2f"]
 _boards_without_nfc = {"waveshare_c6", "waveshare_c6_1.9", "waveshare_c6_1.47"}

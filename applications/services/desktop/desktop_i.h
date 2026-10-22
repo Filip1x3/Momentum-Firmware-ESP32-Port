@@ -24,6 +24,7 @@
 #include <gui/gui.h>
 #include <gui/view_stack.h>
 #include <gui/view_dispatcher.h>
+#include <gui/view_holder.h>
 #include <gui/modules/popup.h>
 #include <gui/modules/dialog_ex.h>
 #include <gui/scene_manager.h>
@@ -70,6 +71,8 @@ struct Desktop {
     DialogEx* mesh_pair_dialog;
     DesktopLockMenuView* lock_menu;
     DesktopUsbStorageView* usb_storage_view;
+    ViewHolder* usb_storage_holder;
+    bool usb_storage_loader_locked;
     DesktopMeshClientsView* mesh_clients_view;
     DesktopMeshActionView* mesh_action_view;
     DesktopMeshDeviceView* mesh_device_view;
@@ -147,6 +150,9 @@ struct Desktop {
 void desktop_lock(Desktop* desktop);
 void desktop_lock_keypad(Desktop* desktop);
 void desktop_unlock(Desktop* desktop);
+/* USB Storage must not read SD animations or auto-lock while the host owns SD. */
+void desktop_suspend_for_usb_storage(Desktop* desktop);
+void desktop_resume_after_usb_storage(Desktop* desktop);
 void desktop_set_dummy_mode_state(Desktop* desktop, bool enabled);
 void desktop_set_stealth_mode_state(Desktop* desktop, bool enabled);
 

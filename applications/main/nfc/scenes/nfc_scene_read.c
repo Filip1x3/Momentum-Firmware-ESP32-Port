@@ -3,11 +3,10 @@
 
 void nfc_scene_read_on_enter(void* context) {
     NfcApp* instance = context;
-    nfc_show_loading_popup(instance, true);
-    nfc_supported_cards_load_cache(instance->nfc_supported_cards);
-    nfc_show_loading_popup(instance, false);
+    /* Reading uses the built-in protocol support, not the SD parser plugins.
+     * Leave parser loading until a result actually needs to be displayed. */
 
-    nfc_protocol_support_on_enter(NfcProtocolSupportSceneRead, context);
+    nfc_protocol_support_on_enter(NfcProtocolSupportSceneRead, instance);
 }
 
 bool nfc_scene_read_on_event(void* context, SceneManagerEvent event) {

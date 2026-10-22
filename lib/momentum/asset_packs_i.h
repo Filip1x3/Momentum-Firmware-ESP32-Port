@@ -12,6 +12,7 @@ LIST_DEF(IconSwapList, IconSwap, M_POD_OPLIST)
 
 typedef struct {
     IconSwapList_t icons;
+    size_t memory_used;
     uint8_t* fonts[FontTotalNumber];
     CanvasFontParameters* font_params[FontTotalNumber];
 } AssetPacks;

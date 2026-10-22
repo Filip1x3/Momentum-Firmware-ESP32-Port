@@ -55,7 +55,15 @@ static void fw_ota_trim(char* s) {
 }
 
 bool fw_ota_is_supported(void) {
+#ifdef MOMENTUM_DUALBOOT
+    return false;
+#else
+    // Also protect an installed dual-boot layout if a normal image is started
+    // accidentally: the other slot belongs to Bruce, not the OTA updater.
+    if(esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS,
+                               "bruce_nvs")) return false;
     return esp_ota_get_next_update_partition(NULL) != NULL;
+#endif
 }
 
 const char* fw_ota_running_partition_label(void) {
@@ -152,6 +160,10 @@ bool fw_ota_flash_file(
     void* progress_ctx,
     char* err,
     size_t err_size) {
+    if(!fw_ota_is_supported()) {
+        fw_ota_set_err(err, err_size, "OTA unavailable: use the complete USB firmware bundle");
+        return false;
+    }
     const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
     if(!next) {
         fw_ota_set_err(err, err_size, "OTA not supported (no ota slot)");

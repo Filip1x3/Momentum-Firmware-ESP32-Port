@@ -36,6 +36,11 @@ idf_component_register(
     LDFRAGMENTS "main.lf"
 )
 
+option(MOMENTUM_BOOT_DIAGNOSTICS "Log boot stages on native USB for local diagnosis" OFF)
+if(MOMENTUM_BOOT_DIAGNOSTICS)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE MOMENTUM_BOOT_DIAGNOSTICS=1)
+endif()
+
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     include("${ESP32_FAM_PORTED_CMAKE}")
 

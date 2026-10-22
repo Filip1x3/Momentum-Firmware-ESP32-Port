@@ -316,21 +316,23 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         furi_semaphore_release(desktop->animation_semaphore);
 
     } else if(event == DesktopGlobalAfterAppFinished) {
-        animation_manager_load_and_continue_animation(desktop->animation_manager);
-        desktop_auto_lock_arm(desktop);
         desktop->app_running = false;
-
-        /* Settings/WiFi ask for these Desktop-owned scenes while their app is
-         * still active. Open only after Loader has removed that app's GUI;
-         * otherwise the scene is created underneath it and looks like nothing
-         * happened (or races the app's radio/storage cleanup). */
-        if(desktop->open_usb_storage_after_app || desktop->open_mesh_clients_after_app) {
-            furi_timer_start(
-                desktop->deferred_scene_timer, furi_ms_to_ticks(DEFERRED_SCENE_DELAY_MS));
+        if(desktop->open_usb_storage_after_app) {
+            /* Loader sends this only after the Settings thread has joined and
+             * its views are gone. Hand off directly, with no Dolphin reload or
+             * arbitrary timer between Settings and the full-screen USB view. */
+            desktop->open_usb_storage_after_app = false;
+            scene_manager_next_scene(desktop->scene_manager, DesktopSceneUsbStorage);
+        } else if(!desktop->usb_storage_holder) {
+            desktop_resume_after_usb_storage(desktop);
+            if(desktop->open_mesh_clients_after_app) {
+                furi_timer_start(
+                    desktop->deferred_scene_timer, furi_ms_to_ticks(DEFERRED_SCENE_DELAY_MS));
+            }
         }
 
     } else if(event == DesktopGlobalAutoLock) {
-        if(!desktop->app_running && !desktop->locked) {
+        if(!desktop->app_running && !desktop->locked && !desktop->usb_storage_holder) {
             // Disable AutoLock if usb_inhibit_autolock option enabled and device have active USB session.
             if((desktop->settings.usb_inhibit_auto_lock) && (furi_hal_usb_is_locked())) {
                 return (0);
@@ -393,7 +395,11 @@ static bool desktop_custom_event_callback(void* context, uint32_t event) {
         }
 
     } else if(event == DesktopGlobalOpenUsbStorage) {
-        scene_manager_next_scene(desktop->scene_manager, DesktopSceneUsbStorage);
+        if(desktop->app_running) {
+            desktop->open_usb_storage_after_app = true;
+        } else if(!desktop->usb_storage_holder) {
+            scene_manager_next_scene(desktop->scene_manager, DesktopSceneUsbStorage);
+        }
 
     } else if(event == DesktopGlobalOpenMeshClients) {
         scene_manager_next_scene(desktop->scene_manager, DesktopSceneMeshClients);
@@ -436,16 +442,11 @@ static void desktop_auto_lock_timer_callback(void* context) {
 
 static void desktop_deferred_scene_timer_callback(void* context) {
     Desktop* desktop = context;
-    /* Loader's event and the Settings view teardown are asynchronous. Wait
-       until the app is truly gone, then put the requested full-screen scene on
-       top instead of leaving it hidden underneath the Dolphin desktop. */
+    /* Mesh retains its delayed handoff. USB Storage is opened directly by the
+     * ordered Loader-completion event instead of this polling timer. */
     if(desktop->app_running) {
         furi_timer_start(
             desktop->deferred_scene_timer, furi_ms_to_ticks(DEFERRED_SCENE_DELAY_MS));
-    } else if(desktop->open_usb_storage_after_app) {
-        desktop->open_usb_storage_after_app = false;
-        view_dispatcher_send_custom_event(
-            desktop->view_dispatcher, DesktopGlobalOpenUsbStorage);
     } else if(desktop->open_mesh_clients_after_app) {
         desktop->open_mesh_clients_after_app = false;
         view_dispatcher_send_custom_event(
@@ -503,6 +504,23 @@ static void desktop_auto_lock_inhibit(Desktop* desktop) {
     }
 }
 
+void desktop_suspend_for_usb_storage(Desktop* desktop) {
+    desktop_auto_lock_inhibit(desktop);
+    if(animation_manager_is_animation_loaded(desktop->animation_manager)) {
+        animation_manager_unload_and_stall_animation(desktop->animation_manager);
+    }
+}
+
+void desktop_resume_after_usb_storage(Desktop* desktop) {
+    /* If another app won the Loader reservation, its completion event owns
+     * resuming the animation. Do not reload SD assets underneath that app. */
+    if(desktop->app_running) return;
+    if(!animation_manager_is_animation_loaded(desktop->animation_manager)) {
+        animation_manager_load_and_continue_animation(desktop->animation_manager);
+    }
+    desktop_auto_lock_arm(desktop);
+}
+
 static void desktop_clock_timer_callback(void* context) {
     furi_assert(context);
     Desktop* desktop = context;
@@ -524,7 +542,7 @@ static void desktop_apply_settings(Desktop* desktop) {
     // Dummy mode disabled on ESP32 port — always use normal mode
     desktop_main_set_dummy_mode_state(desktop->main_view, false);
 
-    if(!desktop->app_running && !desktop->locked) {
+    if(!desktop->app_running && !desktop->locked && !desktop->usb_storage_holder) {
         desktop_auto_lock_arm(desktop);
     }
 
@@ -566,6 +584,8 @@ static Desktop* desktop_alloc(void) {
 
     desktop->lock_menu = desktop_lock_menu_alloc();
     desktop->usb_storage_view = desktop_usb_storage_alloc();
+    desktop->usb_storage_holder = NULL;
+    desktop->usb_storage_loader_locked = false;
     desktop->mesh_clients_view = desktop_mesh_clients_alloc();
     desktop->mesh_action_view = desktop_mesh_action_alloc();
     desktop->mesh_device_view = desktop_mesh_device_alloc();
@@ -608,10 +628,6 @@ static Desktop* desktop_alloc(void) {
         desktop->view_dispatcher,
         DesktopViewIdLockMenu,
         desktop_lock_menu_get_view(desktop->lock_menu));
-    view_dispatcher_add_view(
-        desktop->view_dispatcher,
-        DesktopViewIdUsbStorage,
-        desktop_usb_storage_get_view(desktop->usb_storage_view));
     view_dispatcher_add_view(
         desktop->view_dispatcher,
         DesktopViewIdMeshClients,
@@ -842,8 +858,9 @@ void desktop_api_set_settings(Desktop* instance, const DesktopSettings* settings
 
 void desktop_api_open_usb_storage(Desktop* instance) {
     furi_assert(instance);
-    instance->open_usb_storage_after_app = true;
-    furi_timer_start(instance->deferred_scene_timer, furi_ms_to_ticks(DEFERRED_SCENE_DELAY_MS));
+    /* Requests and Loader completion are ordered on the Desktop event queue.
+     * No cross-thread flag writes or timer polling of app teardown are needed. */
+    view_dispatcher_send_custom_event(instance->view_dispatcher, DesktopGlobalOpenUsbStorage);
 }
 
 void desktop_api_open_mesh_clients(Desktop* instance) {

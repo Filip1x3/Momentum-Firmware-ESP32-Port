@@ -74,13 +74,13 @@ void icon_animation_start(IconAnimation* instance) {
     furi_check(instance);
 
     if(!instance->animating) {
+        /* FAP menu icons and static pack replacements have no animation clock. */
+        if(instance->icon->frame_count <= 1 || instance->icon->frame_rate == 0) return;
         instance->animating = true;
-        furi_assert(instance->icon->frame_rate);
-        if (instance->icon->frame_rate != 0) 
-            furi_check(
-                furi_timer_start(
-                    instance->timer,
-                    (furi_kernel_get_tick_frequency() / instance->icon->frame_rate)) == FuriStatusOk);
+        furi_check(furi_timer_start(
+                       instance->timer,
+                       MAX(1u, furi_kernel_get_tick_frequency() / instance->icon->frame_rate)) ==
+                   FuriStatusOk);
     }
 }
 

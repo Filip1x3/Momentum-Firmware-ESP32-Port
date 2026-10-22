@@ -317,8 +317,12 @@ static bool compress_decode_internal(
 
     bool result = false;
 
-    CompressHeader* header = (CompressHeader*)data_in;
+    *data_res_size = 0;
+    if(!data_in_size || data_in[0] > 1) return false;
+    const CompressHeader* header = (const CompressHeader*)data_in;
     if(header->is_compressed) {
+        if(data_in_size < sizeof(CompressHeader) || header->reserved ||
+           header->compressed_buff_size > data_in_size - sizeof(CompressHeader)) return false;
         MemoryStreamState compressed_context = {
             .data_ptr = (uint8_t*)&data_in[sizeof(CompressHeader)],
             .data_size = header->compressed_buff_size,
@@ -340,7 +344,7 @@ static bool compress_decode_internal(
             *data_res_size = data_out_size - decompressed_context.data_size;
         }
     } else if(data_out_size >= data_in_size - 1) {
-        memcpy(data_out, &data_in[1], data_in_size);
+        memcpy(data_out, &data_in[1], data_in_size - 1);
         *data_res_size = data_in_size - 1;
         result = true;
     } else {

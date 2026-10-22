@@ -8,6 +8,7 @@
  */
 
 #include "bt_i.h"
+#include "bt_stack_lifecycle.h"
 
 #include <furi_hal_bt.h>
 #include <gui/elements.h>
@@ -456,6 +457,8 @@ static void bt_statusbar_update(Bt* bt) {
 
 /* ---- Profile management ---- */
 
+static bool bt_handle_stop_stack(Bt* bt);
+
 static void bt_change_profile(Bt* bt, BtMessage* message) {
     if(furi_hal_bt_is_gatt_gap_supported()) {
         bt_settings_load(&bt->bt_settings);
@@ -561,18 +564,22 @@ static void bt_handle_set_settings(Bt* bt, BtMessage* message) {
 }
 
 static void bt_handle_reload_keys_settings(Bt* bt) {
-    bt_load_keys(bt);
-    bt_start_application(bt);
-    bt_load_settings(bt);
-}
-
-static void bt_handle_stop_stack(Bt* bt) {
-    FURI_LOG_I(TAG, "Stopping BLE stack...");
-
-    if(bt->status == BtStatusOff) {
-        FURI_LOG_I(TAG, "BLE stack already off");
+    /* An SD remount/name refresh must not resurrect disabled Bluetooth while
+     * Wi-Fi is using the internal heap. Decide on the BT service thread. */
+    bt_settings_load(&bt->bt_settings);
+    if(!bt->bt_settings.enabled) {
+        bt_handle_stop_stack(bt);
         return;
     }
+    bt_load_keys(bt);
+    bt_start_application(bt);
+    bt_apply_settings(bt);
+}
+
+static bool bt_handle_stop_stack(Bt* bt) {
+    FURI_LOG_I(TAG, "Stopping BLE stack...");
+    /* BtStatusOff only means advertising stopped. The controller can still
+     * own tens of KiB; always consult the actual host/controller states. */
 
     bt_close_rpc_connection(bt);
     furi_hal_bt_stop_advertising();
@@ -582,21 +589,11 @@ static void bt_handle_stop_stack(Bt* bt) {
         bt->current_profile = NULL;
     }
 
-    // Only deinit if stack was actually initialized
-    if(esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) {
-        esp_bluedroid_disable();
-        furi_delay_ms(50);
-        esp_bluedroid_deinit();
-        furi_delay_ms(50);
-    }
-
-    if(esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_disable();
-        furi_delay_ms(50);
-    }
-    if(esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_deinit();
-        furi_delay_ms(50);
+    esp_err_t result = bt_stack_deinit();
+    if(result != ESP_OK) {
+        FURI_LOG_E(TAG, "BLE stack shutdown failed: %d", result);
+        bt->status = BtStatusUnavailable;
+        return false;
     }
 
     ble_serial_reset_initialized();
@@ -604,6 +601,24 @@ static void bt_handle_stop_stack(Bt* bt) {
 
     bt->status = BtStatusOff;
     FURI_LOG_I(TAG, "BLE stack stopped");
+    return true;
+}
+
+static void bt_handle_restore_default(Bt* bt, BtMessage* message) {
+    bt_settings_load(&bt->bt_settings);
+    if(!bt->bt_settings.enabled) {
+        /* Refreshing a name or leaving a BLE application is not a request to
+         * enable Bluetooth. Preserve the user's radio choice and free RAM. */
+        bool stopped = bt_handle_stop_stack(bt);
+        if(message->result) *message->result = stopped;
+        return;
+    }
+    BtMessage profile_message = {
+        .data.profile.template = ble_profile_serial,
+        .data.profile.params = NULL,
+        .result = message->result,
+    };
+    bt_change_profile(bt, &profile_message);
 }
 
 static void bt_handle_start_stack(Bt* bt) {
@@ -640,10 +655,13 @@ static void bt_init_keys_settings(Bt* bt) {
 
     if(storage_sd_status(storage) != FSE_OK) {
         FURI_LOG_D(TAG, "SD Card not ready, skipping settings");
-        /* Start the BLE application without loading keys or settings */
-        bt_start_application(bt);
-        /* Still load settings (from internal storage) */
         bt_load_settings(bt);
+        if(bt->bt_settings.enabled) {
+            bt_start_application(bt);
+            bt_apply_settings(bt);
+        } else {
+            bt_handle_stop_stack(bt);
+        }
         return;
     }
 
@@ -676,9 +694,16 @@ FuriHalBleProfileBase* bt_profile_start(
 }
 
 bool bt_profile_restore_default(Bt* bt) {
-    /* Restore the serial profile (same as STM32) */
-    bt->current_profile = bt_profile_start(bt, ble_profile_serial, NULL);
-    return bt->current_profile != NULL;
+    furi_check(bt);
+    bool result = false;
+    BtMessage message = {
+        .lock = api_lock_alloc_locked(),
+        .type = BtMessageTypeRestoreDefault,
+        .result = &result,
+    };
+    furi_check(furi_message_queue_put(bt->message_queue, &message, FuriWaitForever) == FuriStatusOk);
+    api_lock_wait_unlock_and_free(message.lock);
+    return result;
 }
 
 void bt_disconnect(Bt* bt) {
@@ -879,6 +904,8 @@ int32_t bt_srv(void* p) {
             bt_handle_stop_stack(bt);
         } else if(message.type == BtMessageTypeStartStack) {
             bt_handle_start_stack(bt);
+        } else if(message.type == BtMessageTypeRestoreDefault) {
+            bt_handle_restore_default(bt, &message);
         }
 
         if(message.lock) api_lock_unlock(message.lock);

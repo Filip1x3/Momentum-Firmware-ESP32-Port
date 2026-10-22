@@ -1,0 +1,9 @@
+App(
+    appid="dualboot_settings",
+    name="Dual Boot",
+    apptype=FlipperAppType.EXTSETTINGS,
+    entry_point="dualboot_settings_app",
+    requires=["gui", "dialogs", "storage"],
+    stack_size=4 * 1024,
+    order=20,
+)

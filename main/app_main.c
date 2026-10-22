@@ -9,9 +9,21 @@
 #include <momentum/settings_i.h>
 #include <momentum/namespoof.h>
 #include <momentum/asset_packs.h>
+#include <fw_ota/fw_dualboot.h>
 
 #include <esp_log.h>
 #include <esp_rom_uart.h>
+#ifdef MOMENTUM_BOOT_DIAGNOSTICS
+#include <esp_rom_caps.h>
+#include <esp_rom_sys.h>
+#include <esp_heap_caps.h>
+#include <esp_system.h>
+#define BOOT_DIAG(stage) esp_rom_printf("[BOOTDIAG] %s internal=%u largest=%u\r\n", stage, \
+    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT), \
+    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
+#else
+#define BOOT_DIAG(stage) ((void)0)
+#endif
 
 static const char* TAG = "Main";
 
@@ -152,6 +164,11 @@ static void furi_log_esp_callback(const uint8_t* data, size_t size, void* contex
 }
 
 void app_main(void) {
+#ifdef MOMENTUM_BOOT_DIAGNOSTICS
+    esp_rom_output_set_as_console(ESP_ROM_USB_SERIAL_DEVICE_NUM);
+    esp_rom_printf("[BOOTDIAG] reset_reason=%d\r\n", (int)esp_reset_reason());
+#endif
+    BOOT_DIAG("app_main");
     ESP_LOGI(TAG, "Starting Furi Core on ESP32...");
 
     // ESP-IDF: Scheduler is already running!
@@ -166,7 +183,12 @@ void app_main(void) {
 
     furi_hal_init_early();
     furi_hal_init();
+    BOOT_DIAG("HAL ready");
+    if(!fw_dualboot_init()) {
+        ESP_LOGW(TAG, "Dual Boot worker unavailable");
+    }
     flipper_init();
+    BOOT_DIAG("worker ready");
     log_registry_snapshot();
 
     bool momentum_initialized = false;
@@ -180,12 +202,14 @@ void app_main(void) {
            strcmp(FLIPPER_SERVICES[i].appid, "desktop") == 0) {
             namespoof_init();
             momentum_settings_load();
+            BOOT_DIAG("settings loaded");
             if(momentum_settings.dark_mode) {
                 uint16_t foreground = furi_hal_display_get_fg_color();
                 furi_hal_display_set_fg_color(furi_hal_display_get_bg_color());
                 furi_hal_display_set_bg_color(foreground);
             }
             asset_packs_init();
+            BOOT_DIAG("assets loaded");
             furi_delay_ms(100);
             momentum_boot_screen_show();
             momentum_initialized = true;
@@ -198,6 +222,7 @@ void app_main(void) {
             NULL);
         furi_thread_set_appid(thread, FLIPPER_SERVICES[i].appid);
         furi_thread_start(thread);
+        BOOT_DIAG(FLIPPER_SERVICES[i].appid);
 
         /* Hide the GUI status bar before any later service (BT, WiFi, power,
          * storage) can register and draw its icon. Keep it hidden throughout
@@ -248,6 +273,7 @@ void app_main(void) {
         FLIPPER_ON_SYSTEM_START[i]();
     }
 
+    BOOT_DIAG("startup hooks complete");
     ESP_LOGI(TAG, "All services started, entering background...");
 
     // This blocks forever (thread scrubber)

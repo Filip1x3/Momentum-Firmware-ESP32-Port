@@ -36,6 +36,26 @@ this port does not give the ESP32 every peripheral of a Flipper Zero.
 
 ## What changed from the base ESP32 port
 
+### v0.2.0 update
+
+- Two separate installers: **Momentum only** and **Momentum + Bruce Dual Boot**.
+  Select the variant in the web flasher; do not mix their BIN files.
+- Dual Boot appears below Clock & Alarm in Settings. Starting Bruce requires a
+  writable SD card; its files are separated under `/bruce`. Return through
+  **Momentum Port → Go back to Momentum Port** in Bruce.
+- Fixes for spontaneous resets and app-entry crashes: corrected task-local
+  storage ownership, Bluetooth memory lifecycle and asset/animation validation.
+- Faster Sub-GHz startup through buffered file reads; NFC Read/Detect no longer
+  loads card parsers before beginning detection. Card parsing loads them on demand.
+- USB Storage now opens its full-screen view from **Settings → System → Others**.
+- Public GitHub release selection in the web flasher, with matching offline
+  fallback packages. Normal and Dual Boot manifests/layouts are checked separately.
+
+See [Dual Boot](docs/DUALBOOT.md), [startup and USB storage](docs/STARTUP_AND_USB_STORAGE.md),
+[Bluetooth memory](docs/BT_MEMORY_STABILITY.md) and [asset-pack stability](docs/ASSET_PACK_STABILITY.md).
+Dual Boot is experimental; verified switching on a development device is not
+a guarantee that every Bruce application or third-party asset pack works.
+
 ### Momentum interface
 
 - Dedicated **Momentum** menu with Interface, Protocols and Misc settings.
@@ -48,6 +68,9 @@ this port does not give the ESP32 every peripheral of a Flipper Zero.
 - Status-bar customization, battery styles and a muted indicator when sound is off.
 - Momentum asset-pack loading for desktop animations, icons and Passport graphics.
   Packs downloaded from Momentum can be used without manually editing their files.
+  Pack changes are applied with a restart. External bitmaps, animation metadata and
+  fonts are checked before use; oversized replacement icons fit their original UI
+  boxes in memory, without modifying the pack on the SD card.
 - Dolphin level, XP and mood settings, Passport customization, screen colors,
   dark mode and device-name/shell-color options.
 - Menu text scrolling, browser display options and optional Popup Overlay
@@ -75,7 +98,7 @@ this port does not give the ESP32 every peripheral of a Flipper Zero.
   transport selection. This is a script runner, not an on-screen typing keyboard.
 - qFlipper-compatible USB RPC bridge with a saved enable-on-boot preference.
 - Phone remote control and trusted-phone unlock, subject to pairing and locked-RPC settings.
-- USB Storage under **Settings → Others**, with an immediate full-screen storage view.
+- USB Storage under **Settings → System → Others**, with an immediate full-screen storage view.
   USB Storage, U2F, Bad KB and qFlipper may need exclusive use of the USB interface.
 - WiFi enable/disable and Mesh Clients moved into WiFi; Bluetooth enable/disable
   is available in Bluetooth. Toggle labels reflect the current state.
@@ -123,17 +146,18 @@ Use the **[Web Flasher](https://momentum-esp32-port.pages.dev/)** to install
 firmware over USB from a desktop browser with Web Serial, such as Chrome or Edge.
 Select LilyGo T-Embed CC1101, choose the firmware and installation mode, connect
 the device and confirm installation. Close qFlipper and other serial clients first.
-The hosted installer currently offers its included v0.1.0 package; automatic
-GitHub release synchronization is not configured on the public hosting yet.
+Select **Dual Boot Off** for Momentum only, or **On** for Momentum + Bruce.
+The hosted installer reads complete public GitHub releases automatically and
+labels its included v0.2.0 fallback explicitly when GitHub is unavailable.
 Download and extract the matching SD-card package after flashing.
 
 Back up your SD card and any important device data before flashing.
-Download the four `.bin` files and `sdcard.zip` from
+Download the matching installer ZIP and `sdcard.zip` from
 [Releases](https://github.com/Filip1x3/Momentum-Firmware-ESP32-Port/releases).
 Use binaries from this fork, not upstream Flipper/Momentum firmware or the
 upstream Sor3nt web flasher.
 
-### Full serial flash: ESP32-S3, 16 MB
+### Full serial flash: standard variant only
 
 Close qFlipper and other programs using the USB port. Put T-Embed into its
 firmware-download mode, then flash these files at their exact hexadecimal offsets:
@@ -148,6 +172,8 @@ firmware-download mode, then flash these files at their exact hexadecimal offset
 Flash settings: **ESP32-S3 / 16 MB / DIO / 80 MHz**.
 These offsets belong to this release's dual-OTA partition layout.
 `ota_data_initial.bin` does **not** belong at `0x10000`.
+For the separate five-file Dual Boot installer, use the filenames/offsets in
+the release's `FLASHING.md` and [Dual Boot notes](docs/DUALBOOT.md), not this table.
 
 Example using esptool 4.x from the ESP-IDF 5.4.1 environment
 (replace `COM8` with your device's port):
@@ -199,6 +225,11 @@ write to `build_t_embed/`; `flasher_args.json` there is the source of truth for
 that build's flash files and offsets. GitHub Actions are not configured in this repository.
 The web flasher is maintained separately and is not included here.
 
+For Dual Boot, download `bruce-dualboot-source-v0.2.0.zip` from the same release,
+extract it and use `tools/build_dualboot.py --bruce-dir /path/to/Bruce-Momentum-DualBoot`
+in an exported ESP-IDF shell with PlatformIO installed. The archive includes
+the complete modified companion source, build configuration and GPL license.
+
 ## Limitations and safety
 
 - This is a work-in-progress port, **not full one-to-one Momentum compatibility**.
@@ -220,6 +251,9 @@ The web flasher is maintained separately and is not included here.
   — ESP32 platform port and application/hardware foundation.
 - [Next-Flip / Momentum Firmware](https://github.com/Next-Flip/Momentum-Firmware)
   — Momentum code, interface and assets adapted for this fork.
+- [BruceDevices / Bruce](https://github.com/BruceDevices/firmware)
+  — optional Bruce 1.16 companion. Corresponding modified source and its GPL-3.0
+  license are supplied with the Dual Boot release.
 - [Flipper Devices](https://github.com/flipperdevices/flipperzero-firmware)
   and the respective application/library contributors.
 - [Filip1x3](https://github.com/Filip1x3) — this fork and T-Embed integration.

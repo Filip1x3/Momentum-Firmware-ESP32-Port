@@ -184,9 +184,9 @@ bool subghz_keystore_load(SubGhzKeystore* instance, const char* file_name) {
 
     Storage* storage = furi_record_open(RECORD_STORAGE);
 
-    FlipperFormat* flipper_format = flipper_format_file_alloc(storage);
+    FlipperFormat* flipper_format = flipper_format_buffered_file_alloc(storage);
     do {
-        if(!flipper_format_file_open_existing(flipper_format, file_name)) {
+        if(!flipper_format_buffered_file_open_existing(flipper_format, file_name)) {
             FURI_LOG_E(TAG, "Unable to open file for read: %s", file_name);
             break;
         }

@@ -51,7 +51,7 @@ struct NfcSupportedCards {
 };
 
 NfcSupportedCards* nfc_supported_cards_alloc(CompositeApiResolver* api_resolver) {
-    NfcSupportedCards* instance = malloc(sizeof(NfcSupportedCards));
+    NfcSupportedCards* instance = calloc(1, sizeof(NfcSupportedCards));
     instance->api_resolver = api_resolver;
 
     NfcSupportedCardsPluginCache_init(instance->plugins_cache_arr);
@@ -75,7 +75,7 @@ void nfc_supported_cards_free(NfcSupportedCards* instance) {
 }
 
 static NfcSupportedCardsLoadContext* nfc_supported_cards_load_context_alloc(void) {
-    NfcSupportedCardsLoadContext* instance = malloc(sizeof(NfcSupportedCardsLoadContext));
+    NfcSupportedCardsLoadContext* instance = calloc(1, sizeof(NfcSupportedCardsLoadContext));
 
     instance->storage = furi_record_open(RECORD_STORAGE);
     instance->directory = storage_file_alloc(instance->storage);
@@ -216,6 +216,8 @@ bool nfc_supported_cards_read(NfcSupportedCards* instance, NfcDevice* device, Nf
     furi_assert(device);
     furi_assert(nfc);
 
+    nfc_supported_cards_load_cache(instance);
+
     bool card_read = false;
     NfcProtocol protocol = nfc_device_get_protocol(device);
 
@@ -263,6 +265,10 @@ bool nfc_supported_cards_parse(
     furi_assert(instance);
     furi_assert(device);
     furi_assert(parsed_data);
+
+    /* Do not make the Read screen wait for every ELF parser to be loaded.
+     * The cache remains per-app and is reused for subsequent cards/retries. */
+    nfc_supported_cards_load_cache(instance);
 
     bool card_parsed = false;
     NfcProtocol protocol = nfc_device_get_protocol(device);

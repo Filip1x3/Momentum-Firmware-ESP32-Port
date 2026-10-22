@@ -213,7 +213,9 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
     furi_check(instance);
 
     Storage* storage = furi_record_open(RECORD_STORAGE);
-    FlipperFormat* fff_data_file = flipper_format_file_alloc(storage);
+    /* The parser scans this file repeatedly (frequencies, hopping, presets).
+     * Buffer the reads instead of seeking the SD card for individual bytes. */
+    FlipperFormat* fff_data_file = flipper_format_buffered_file_alloc(storage);
 
     FuriString* temp_str;
     temp_str = furi_string_alloc();
@@ -224,7 +226,7 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
 
     if(file_path) {
         do {
-            if(!flipper_format_file_open_existing(fff_data_file, file_path)) {
+            if(!flipper_format_buffered_file_open_existing(fff_data_file, file_path)) {
                 FURI_LOG_I(TAG, "File is not used %s", file_path);
                 break;
             }

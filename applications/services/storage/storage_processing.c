@@ -458,7 +458,7 @@ static FS_Error storage_process_sd_unmount(Storage* app) {
             break;
         }
 
-        sd_unmount_card(storage);
+        ret = sd_unmount_card(storage);
         storage_data_timestamp(storage);
     } while(false);
 

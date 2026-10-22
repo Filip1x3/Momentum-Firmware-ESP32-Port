@@ -49,13 +49,14 @@ void subghz_last_settings_load(SubGhzLastSettings* instance, size_t preset_count
     instance->leds_and_amp = true;
 
     Storage* storage = furi_record_open(RECORD_STORAGE);
-    FlipperFormat* fff_data_file = flipper_format_file_alloc(storage);
+    /* Missing optional keys rewind the file, so keep small reads in RAM. */
+    FlipperFormat* fff_data_file = flipper_format_buffered_file_alloc(storage);
 
     FuriString* temp_str = furi_string_alloc();
     uint32_t config_version = 0;
 
     if(FSE_OK == storage_sd_status(storage) &&
-       flipper_format_file_open_existing(fff_data_file, SUBGHZ_LAST_SETTINGS_PATH)) {
+       flipper_format_buffered_file_open_existing(fff_data_file, SUBGHZ_LAST_SETTINGS_PATH)) {
         do {
             if(!flipper_format_read_header(fff_data_file, temp_str, &config_version)) break;
             if((strcmp(furi_string_get_cstr(temp_str), SUBGHZ_LAST_SETTING_FILE_TYPE) != 0) ||
@@ -156,7 +157,7 @@ void subghz_last_settings_load(SubGhzLastSettings* instance, size_t preset_count
 
     furi_string_free(temp_str);
 
-    flipper_format_file_close(fff_data_file);
+    flipper_format_buffered_file_close(fff_data_file);
     flipper_format_free(fff_data_file);
     furi_record_close(RECORD_STORAGE);
 

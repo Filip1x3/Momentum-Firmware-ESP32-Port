@@ -152,10 +152,12 @@ labels its included v0.2.0 fallback explicitly when GitHub is unavailable.
 Download and extract the matching SD-card package after flashing.
 
 Back up your SD card and any important device data before flashing.
-Download the matching installer ZIP and `sdcard.zip` from
+Download the matching BIN files and `sdcard.zip` from
 [Releases](https://github.com/Filip1x3/Momentum-Firmware-ESP32-Port/releases).
 Use binaries from this fork, not upstream Flipper/Momentum firmware or the
 upstream Sor3nt web flasher.
+Installer ZIP downloads are available directly from the web flasher; manifests
+and installation instructions are not separate GitHub release attachments.
 
 ### Full serial flash: standard variant only
 
@@ -173,7 +175,7 @@ Flash settings: **ESP32-S3 / 16 MB / DIO / 80 MHz**.
 These offsets belong to this release's dual-OTA partition layout.
 `ota_data_initial.bin` does **not** belong at `0x10000`.
 For the separate five-file Dual Boot installer, use the filenames/offsets in
-the release's `FLASHING.md` and [Dual Boot notes](docs/DUALBOOT.md), not this table.
+[Dual Boot offsets](docs/FLASHING.md), not this table.
 
 Example using esptool 4.x from the ESP-IDF 5.4.1 environment
 (replace `COM8` with your device's port):
@@ -225,7 +227,7 @@ write to `build_t_embed/`; `flasher_args.json` there is the source of truth for
 that build's flash files and offsets. GitHub Actions are not configured in this repository.
 The web flasher is maintained separately and is not included here.
 
-For Dual Boot, download `bruce-dualboot-source-v0.2.0.zip` from the same release,
+For Dual Boot, download the [matching Bruce source archive](third_party/bruce-dualboot/bruce-dualboot-source-v0.2.0.zip),
 extract it and use `tools/build_dualboot.py --bruce-dir /path/to/Bruce-Momentum-DualBoot`
 in an exported ESP-IDF shell with PlatformIO installed. The archive includes
 the complete modified companion source, build configuration and GPL license.

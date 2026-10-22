@@ -74,7 +74,8 @@ separate files and validated offsets; neither NVS nor LittleFS is included.
 
 Sources used: [Bruce 1.16](https://github.com/BruceDevices/firmware/tree/1.16),
 commit `59e83bfbd8a63a6b67ea23498e15c710a1ed9657` with the port modifications
-in `bruce-dualboot-source-v0.2.0.zip` attached to the same GitHub release.
+in the [matching source archive](../third_party/bruce-dualboot/bruce-dualboot-source-v0.2.0.zip)
+stored in this repository, outside the release's BIN/SD attachments.
 The archive contains full source, dependency/build configuration, a file-hash
 manifest and the upstream GPL-3.0 license. Retain all upstream license notices.
 No attack modules are modified by the dual-boot integration.

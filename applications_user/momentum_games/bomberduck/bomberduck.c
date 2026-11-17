@@ -114,7 +114,9 @@ void init() {
     }
 
     world.enemies_count = 0;
-    for(int j = 0; j < rand() % 4 + world.level / 5; j++) {
+    for(int j = 0; j < rand() % 4 + world.level / 5 &&
+                   j < (int)(sizeof(world.enemies) / sizeof(world.enemies[0]));
+        j++) {
         Enemy enemy;
         enemy.x = 4 + rand() % 7;
         enemy.y = rand() % 6;
@@ -271,7 +273,8 @@ static void draw_callback(Canvas* canvas, void* ctx) {
     furi_assert(ctx);
     const BomberState* bomber_state = ctx;
 
-    furi_mutex_acquire(bomber_state->mutex, FuriWaitForever);
+    // Never stall the GUI task behind a game update or a notification.
+    if(furi_mutex_acquire(bomber_state->mutex, 0) != FuriStatusOk) return;
     if(!BFS()) {
         init();
     }
@@ -361,7 +364,8 @@ static void input_callback(InputEvent* input_event, void* ctx) {
     furi_assert(ctx);
     FuriMessageQueue* event_queue = ctx;
 
-    furi_message_queue_put(event_queue, input_event, FuriWaitForever);
+    // A full input queue must not block the shared GUI/input task.
+    furi_message_queue_put(event_queue, input_event, 0);
 }
 
 int32_t bomberduck_app(void* p) {
@@ -372,7 +376,11 @@ int32_t bomberduck_app(void* p) {
     // Очередь событий на 8 элементов размера InputEvent
     FuriMessageQueue* event_queue = furi_message_queue_alloc(8, sizeof(InputEvent));
 
-    BomberState* bomber_state = malloc(sizeof(BomberState));
+    BomberState* bomber_state = calloc(1, sizeof(BomberState));
+    if(!bomber_state) {
+        furi_message_queue_free(event_queue);
+        return 255;
+    }
 
     bomber_state->mutex = furi_mutex_alloc(FuriMutexTypeNormal); // Alloc Mutex
     if(!bomber_state->mutex) {
@@ -391,6 +399,9 @@ int32_t bomberduck_app(void* p) {
     // нашу очередь сообщений, чтоб запихивать в неё эти события
     view_port_input_callback_set(view_port, input_callback, event_queue);
 
+    // Initialize before publishing the viewport: GUI may draw immediately.
+    init();
+
     // Создаем GUI приложения
     Gui* gui = furi_record_open(RECORD_GUI);
     // Подключаем view port к GUI в полноэкранном режиме
@@ -398,12 +409,13 @@ int32_t bomberduck_app(void* p) {
     NotificationApp* notification = furi_record_open(RECORD_NOTIFICATION);
     notification_message_block(notification, &sequence_display_backlight_enforce_on);
 
-    init();
-
     // Бесконечный цикл обработки очереди событий
     while(1) {
-        if(furi_message_queue_get(event_queue, &event, 100) == FuriStatusOk) {
-            furi_mutex_acquire(bomber_state->mutex, FuriWaitForever);
+        const bool have_event =
+            furi_message_queue_get(event_queue, &event, 100) == FuriStatusOk;
+        // Simulation also runs on timeout, so it needs the lock on EVERY tick.
+        furi_mutex_acquire(bomber_state->mutex, FuriWaitForever);
+        if(have_event) {
             // Если нажата кнопка "назад", то выходим из цикла, а следовательно и из приложения
 
             if(event.type == InputTypePress) {
@@ -447,6 +459,7 @@ int32_t bomberduck_app(void* p) {
                 }
             } else if(event.type == InputTypeLong) {
                 if(event.key == InputKeyBack) {
+                    furi_mutex_release(bomber_state->mutex);
                     break;
                 }
             }
@@ -629,15 +642,16 @@ int32_t bomberduck_app(void* p) {
         view_port_update(view_port);
     }
 
+    // Detach callbacks before freeing their queue and game state.
+    view_port_enabled_set(view_port, false);
+    gui_remove_view_port(gui, view_port);
+    view_port_free(view_port);
+
     // Return to normal backlight settings
     notification_message_block(notification, &sequence_display_backlight_enforce_auto);
     furi_record_close(RECORD_NOTIFICATION);
     // Специальная очистка памяти, занимаемой очередью
     furi_message_queue_free(event_queue);
-
-    // Чистим созданные объекты, связанные с интерфейсом
-    gui_remove_view_port(gui, view_port);
-    view_port_free(view_port);
 
     furi_mutex_free(bomber_state->mutex);
     furi_record_close(RECORD_GUI);

@@ -16,18 +16,19 @@ void protopirate_rx_stack_teardown_for_registry_switch(ProtoPirateApp* app) {
         protopirate_rx_end(app);
     }
 
-    if(app->txrx->receiver) {
-        subghz_receiver_set_rx_callback(app->txrx->receiver, NULL, NULL);
-        subghz_receiver_free(app->txrx->receiver);
-        app->txrx->receiver = NULL;
-    }
-
     if(app->txrx->worker) {
         if(subghz_worker_is_running(app->txrx->worker)) {
             subghz_worker_stop(app->txrx->worker);
         }
         subghz_worker_free(app->txrx->worker);
         app->txrx->worker = NULL;
+    }
+
+    /* The worker's pair callback owns a receiver pointer until it has joined. */
+    if(app->txrx->receiver) {
+        subghz_receiver_set_rx_callback(app->txrx->receiver, NULL, NULL);
+        subghz_receiver_free(app->txrx->receiver);
+        app->txrx->receiver = NULL;
     }
 
     if(app->txrx->radio_device && app->txrx->txrx_state != ProtoPirateTxRxStateTx) {
@@ -160,13 +161,13 @@ void protopirate_rx_end(ProtoPirateApp* app) {
         return;
     }
 
-    if(app->txrx->worker && subghz_worker_is_running(app->txrx->worker)) {
-        subghz_worker_stop(app->txrx->worker);
-    }
-
     if(app->txrx->radio_device) {
         subghz_devices_stop_async_rx(app->txrx->radio_device);
         subghz_devices_idle(app->txrx->radio_device);
+    }
+
+    if(app->txrx->worker && subghz_worker_is_running(app->txrx->worker)) {
+        subghz_worker_stop(app->txrx->worker);
     }
 
     app->txrx->txrx_state = ProtoPirateTxRxStateIDLE;

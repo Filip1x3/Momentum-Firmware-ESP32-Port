@@ -7,6 +7,7 @@
 #include <furi.h>
 #include <furi_hal_random.h>
 #include <btshim.h>
+#include <bt_stack_lifecycle.h>
 #include <string.h>
 
 #define TAG "BleSpamHal"
@@ -14,6 +15,7 @@
 static volatile bool s_adv_configured = false;
 static volatile bool s_advertising = false;
 static volatile bool s_rand_addr_pending = false;
+static bool s_stack_owned = false;
 
 static esp_ble_adv_params_t s_adv_params = {
     .adv_int_min = 0x20,               // 20ms
@@ -54,24 +56,33 @@ static void spam_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
 bool ble_spam_hal_start(void) {
     ESP_LOGI(TAG, "Starting BLE spam HAL...");
 
+    // Do not initialize a second host on top of an incompletely released one.
+    if(s_stack_owned) ble_spam_hal_stop();
+    if(s_stack_owned) return false;
     // Stop btshim BLE stack
     Bt* bt = furi_record_open(RECORD_BT);
     bt_stop_stack(bt);
     furi_record_close(RECORD_BT);
     furi_delay_ms(100);
+    if(esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED ||
+       esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE) {
+        ESP_LOGE(TAG, "Previous Bluetooth stack could not be released");
+        return false;
+    }
+    s_stack_owned = true;
 
     // Init BLE controller
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     esp_err_t err = esp_bt_controller_init(&bt_cfg);
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "controller init: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "controller enable: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     // Init Bluedroid
@@ -79,20 +90,20 @@ bool ble_spam_hal_start(void) {
     err = esp_bluedroid_init_with_cfg(&bd_cfg);
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "bluedroid init: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     err = esp_bluedroid_enable();
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "bluedroid enable: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     // Register our GAP callback
     err = esp_ble_gap_register_callback(spam_gap_event_handler);
     if(err != ESP_OK) {
         ESP_LOGE(TAG, "gap register: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     // Set TX power to maximum for all BLE power types
@@ -115,9 +126,15 @@ bool ble_spam_hal_start(void) {
 
     ESP_LOGI(TAG, "BLE spam HAL ready");
     return true;
+failed:
+    // Initialization may have stopped halfway through. Release only actual
+    // states before allowing the ordinary Bluetooth service to resume.
+    ble_spam_hal_stop();
+    return false;
 }
 
 void ble_spam_hal_stop(void) {
+    if(!s_stack_owned) return;
     ESP_LOGI(TAG, "Stopping BLE spam HAL...");
 
     // Stop advertising
@@ -126,30 +143,25 @@ void ble_spam_hal_stop(void) {
         furi_delay_ms(50);
     }
 
-    // Teardown Bluedroid
-    if(esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) {
-        esp_bluedroid_disable();
-        furi_delay_ms(50);
-        esp_bluedroid_deinit();
-        furi_delay_ms(50);
+    // disable() leaves the controller INITED, not IDLE. Use the shared,
+    // state-checked teardown so repeated opens do not leak its internal RAM.
+    esp_err_t result = bt_stack_deinit();
+    if(result != ESP_OK) {
+        ESP_LOGE(TAG, "Bluetooth shutdown failed: %s", esp_err_to_name(result));
+        return;
     }
-
-    // Teardown controller
-    if(esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_disable();
-        furi_delay_ms(50);
-    }
-    if(esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_deinit();
-        furi_delay_ms(50);
-    }
+    s_stack_owned = false;
+    s_advertising = false;
+    s_adv_configured = false;
+    s_rand_addr_pending = false;
 
     // Restart btshim
     Bt* bt = furi_record_open(RECORD_BT);
-    bt_start_stack(bt);
+    bool restored = bt_profile_restore_default(bt);
     furi_record_close(RECORD_BT);
 
-    ESP_LOGI(TAG, "BLE spam HAL stopped, btshim restored");
+    if(restored) ESP_LOGI(TAG, "BLE spam HAL stopped, btshim restored");
+    else ESP_LOGW(TAG, "BLE HAL stopped; ordinary Bluetooth could not be restored");
 }
 
 bool ble_spam_hal_set_adv_data(const uint8_t* data, uint8_t len) {

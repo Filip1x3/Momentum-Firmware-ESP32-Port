@@ -18,6 +18,15 @@ def function(path: str, name: str) -> str:
 
 
 class StartupWiringTests(unittest.TestCase):
+    def test_system_settings_has_no_firmware_update_shortcut(self):
+        path = "applications/settings/system/system_settings.c"
+        alloc = function(path, "system_settings_alloc")
+        enter = function(path, "system_settings_enter")
+        self.assertNotIn('"Update Firmware"', alloc)
+        self.assertNotIn('"wlan"', enter)
+        self.assertIn('{"Others", "qFlipper Settings"}', enter)
+        self.assertIn('targets[index - 7], NULL', enter)
+
     def test_subghz_startup_readers_are_buffered(self):
         for path, name in [
             ("lib/subghz/subghz_setting.c", "subghz_setting_load"),

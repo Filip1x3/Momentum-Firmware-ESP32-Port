@@ -13,6 +13,13 @@
 void protopirate_scene_receiver_view_callback(ProtoPirateCustomEvent event, void* context);
 static void protopirate_scene_receiver_start_rx_stack(ProtoPirateApp* app);
 
+static uint16_t protopirate_scene_receiver_history_count(ProtoPirateApp* app) {
+    protopirate_view_receiver_lock_history(app->protopirate_receiver);
+    uint16_t count = app->txrx->history ? protopirate_history_get_item(app->txrx->history) : 0;
+    protopirate_view_receiver_unlock_history(app->protopirate_receiver);
+    return count;
+}
+
 static void protopirate_scene_receiver_update_statusbar(void* context) {
     furi_check(context);
     ProtoPirateApp* app = context;
@@ -29,12 +36,14 @@ static void protopirate_scene_receiver_update_statusbar(void* context) {
         is_external = radio_device_loader_is_external(app->txrx->radio_device);
     }
 
+    protopirate_view_receiver_lock_history(app->protopirate_receiver);
     if(app->txrx->history) {
         protopirate_history_format_status_text(
             app->txrx->history, history_stat_str, sizeof(history_stat_str));
     } else {
         snprintf(history_stat_str, sizeof(history_stat_str), "0/%u", PROTOPIRATE_HISTORY_MAX);
     }
+    protopirate_view_receiver_unlock_history(app->protopirate_receiver);
 
     protopirate_view_receiver_add_data_statusbar(
         app->protopirate_receiver, frequency_str, modulation_str, history_stat_str, is_external);
@@ -51,27 +60,18 @@ static void protopirate_scene_receiver_callback(
 
     FURI_LOG_I(TAG, "=== SIGNAL DECODED (%s) ===", decoder_base->protocol->name);
 
-    uint16_t count_before = protopirate_history_get_item(app->txrx->history);
+    /* Share the GUI model's existing mutex: history layout stays compatible
+     * with installed read-only file-decoder plugins. Do not call another view
+     * method or queue a GUI event while holding it. */
+    protopirate_view_receiver_lock_history(app->protopirate_receiver);
     bool added =
         protopirate_history_add_to_history(app->txrx->history, decoder_base, app->txrx->preset);
 
     if(added) {
-        notification_message(app->notifications, &sequence_semi_success);
-
         FURI_LOG_I(
             TAG,
             "Added to history, total items: %u",
             protopirate_history_get_item(app->txrx->history));
-
-        uint16_t count_after = protopirate_history_get_item(app->txrx->history);
-
-        if(count_after > count_before) {
-            protopirate_view_receiver_append_menu_row_from_history(
-                app->protopirate_receiver, app->txrx->history, count_after - 1);
-        }
-
-        uint16_t last_index = protopirate_history_get_item(app->txrx->history) - 1;
-        protopirate_view_receiver_set_idx_menu(app->protopirate_receiver, last_index);
 
         uint16_t new_idx = protopirate_history_get_item(app->txrx->history) - 1;
         if(app->auto_save) {
@@ -81,12 +81,23 @@ static void protopirate_scene_receiver_callback(
             protopirate_history_mark_saved_match_pending(app->txrx->history, new_idx);
         }
 
-        view_dispatcher_send_custom_event(
-            app->view_dispatcher, ProtoPirateCustomEventSceneReceiverUpdate);
+        /* Do not send a blocking dispatcher event from this worker: the GUI
+         * may be joining it while its event queue is full. Coalesce updates. */
+        app->receiver_history_dirty = true;
     } else {
         FURI_LOG_D(TAG, "Capture not admitted (full or duplicate)");
     }
 
+    protopirate_view_receiver_unlock_history(app->protopirate_receiver);
+}
+
+static void protopirate_scene_receiver_refresh_history(ProtoPirateApp* app) {
+    protopirate_view_receiver_sync_menu_from_history(
+        app->protopirate_receiver, app->txrx->history);
+    uint16_t count = protopirate_scene_receiver_history_count(app);
+    protopirate_view_receiver_set_idx_menu(app->protopirate_receiver, count ? count - 1 : 0);
+    protopirate_scene_receiver_update_statusbar(app);
+    notification_message(app->notifications, &sequence_semi_success);
     if(app->txrx->hopper_state == ProtoPirateHopperStateRunning) {
         app->txrx->hopper_state = ProtoPirateHopperStatePause;
         app->txrx->hopper_timeout = 10;
@@ -287,6 +298,7 @@ void protopirate_scene_receiver_on_enter(void* context) {
 
     protopirate_view_receiver_sync_menu_from_history(
         app->protopirate_receiver, app->txrx->history);
+    app->receiver_history_dirty = false;
 
     protopirate_view_receiver_set_callback(
         app->protopirate_receiver, protopirate_scene_receiver_view_callback, app);
@@ -316,7 +328,7 @@ void protopirate_scene_receiver_on_enter(void* context) {
 }
 
 static void protopirate_scene_receiver_handle_back(ProtoPirateApp* app) {
-    if(app->txrx->history && protopirate_history_get_item(app->txrx->history) > 0 &&
+    if(protopirate_scene_receiver_history_count(app) > 0 &&
        !app->auto_save) {
         scene_manager_set_scene_state(app->scene_manager, ProtoPirateSceneReceiver, 1);
         scene_manager_next_scene(app->scene_manager, ProtoPirateSceneNeedSaving);
@@ -350,7 +362,7 @@ bool protopirate_scene_receiver_on_event(void* context, SceneManagerEvent event)
         case ProtoPirateCustomEventViewReceiverOK: {
             uint16_t idx = protopirate_view_receiver_get_idx_menu(app->protopirate_receiver);
             FURI_LOG_I(TAG, "Selected item %d", idx);
-            if(idx < protopirate_history_get_item(app->txrx->history)) {
+            if(idx < protopirate_scene_receiver_history_count(app)) {
                 app->txrx->idx_menu_chosen = idx;
                 scene_manager_set_scene_state(app->scene_manager, ProtoPirateSceneReceiver, 1);
                 scene_manager_next_scene(app->scene_manager, ProtoPirateSceneReceiverInfo);
@@ -361,6 +373,8 @@ bool protopirate_scene_receiver_on_event(void* context, SceneManagerEvent event)
 
         case ProtoPirateCustomEventViewReceiverDeleteItem: {
             uint16_t idx = protopirate_view_receiver_get_idx_menu(app->protopirate_receiver);
+            protopirate_view_receiver_lock_history(app->protopirate_receiver);
+            bool deleted = false;
             if(idx < protopirate_history_get_item(app->txrx->history)) {
                 if(app->loaded_file_path &&
                    protopirate_history_capture_path_equals(
@@ -369,10 +383,13 @@ bool protopirate_scene_receiver_on_event(void* context, SceneManagerEvent event)
                     app->loaded_file_path = NULL;
                 }
                 protopirate_history_delete_item(app->txrx->history, idx);
+                deleted = true;
+            }
+            protopirate_view_receiver_unlock_history(app->protopirate_receiver);
+            if(deleted) {
                 protopirate_view_receiver_delete_item(app->protopirate_receiver, idx);
 
-                uint16_t count_after =
-                    app->txrx->history ? protopirate_history_get_item(app->txrx->history) : 0;
+                uint16_t count_after = protopirate_scene_receiver_history_count(app);
                 if(count_after == 0) {
                     protopirate_view_receiver_sync_menu_from_history(
                         app->protopirate_receiver, app->txrx->history);
@@ -404,7 +421,14 @@ bool protopirate_scene_receiver_on_event(void* context, SceneManagerEvent event)
             break;
         }
     } else if(event.type == SceneManagerEventTypeTick) {
+        protopirate_view_receiver_lock_history(app->protopirate_receiver);
+        const bool history_dirty = app->receiver_history_dirty;
+        app->receiver_history_dirty = false;
         protopirate_scene_receiver_process_deferred_storage(app);
+        protopirate_view_receiver_unlock_history(app->protopirate_receiver);
+        if(history_dirty) {
+            protopirate_scene_receiver_refresh_history(app);
+        }
 
         if(app->txrx->hopper_state != ProtoPirateHopperStateOFF) {
             if(protopirate_hopper_update(app) && protopirate_scene_receiver_bind_rx_stack(app)) {

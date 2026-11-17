@@ -18,6 +18,11 @@ ProtoPirateReceiver* protopirate_view_receiver_alloc(bool auto_save);
 void protopirate_view_receiver_free(ProtoPirateReceiver* receiver);
 View* protopirate_view_receiver_get_view(ProtoPirateReceiver* receiver);
 
+/* Serialize live history mutation/storage against draw/input. Do not call a
+ * receiver view method or join a worker until this lock has been released. */
+void protopirate_view_receiver_lock_history(ProtoPirateReceiver* receiver);
+void protopirate_view_receiver_unlock_history(ProtoPirateReceiver* receiver);
+
 void protopirate_view_receiver_add_data_statusbar(
     ProtoPirateReceiver* receiver,
     const char* frequency_str,

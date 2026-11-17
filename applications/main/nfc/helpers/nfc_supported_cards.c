@@ -25,6 +25,7 @@ typedef struct {
     FuriString* name;
     NfcProtocol protocol;
     NfcSupportedCardsPluginFeature feature;
+    bool metadata_loaded;
 } NfcSupportedCardsPluginCache;
 
 ARRAY_DEF(NfcSupportedCardsPluginCache, NfcSupportedCardsPluginCache, M_POD_OPLIST); //-V658
@@ -134,35 +135,42 @@ static const NfcSupportedCardsPlugin* nfc_supported_cards_get_plugin(
     return plugin;
 }
 
-static const NfcSupportedCardsPlugin* nfc_supported_cards_get_next_plugin(
-    NfcSupportedCardsLoadContext* instance,
-    const ElfApiInterface* api_interface) {
-    const NfcSupportedCardsPlugin* plugin = NULL;
-
-    do {
-        if(!storage_file_is_open(instance->directory)) break;
+static bool nfc_supported_cards_get_next_name(NfcSupportedCardsLoadContext* instance) {
+    while(storage_file_is_open(instance->directory)) {
+        FileInfo info;
         if(!storage_dir_read(
-               instance->directory, NULL, instance->file_name, sizeof(instance->file_name)))
-            break;
+               instance->directory, &info, instance->file_name, sizeof(instance->file_name)))
+            return false;
+        if(file_info_is_dir(&info)) continue;
 
         const size_t suffix_len = strlen(NFC_SUPPORTED_CARDS_PLUGIN_SUFFIX);
         const size_t file_name_len = strlen(instance->file_name);
-        if(file_name_len <= suffix_len) break;
+        if(file_name_len <= suffix_len) continue;
 
         size_t suffix_start_pos = file_name_len - suffix_len;
         if(memcmp(
                &instance->file_name[suffix_start_pos],
                NFC_SUPPORTED_CARDS_PLUGIN_SUFFIX,
                suffix_len) != 0) //-V1051
-            break;
+            continue;
 
         // Trim suffix from file_name to save memory. The suffix will be concatenated on plugin load.
         instance->file_name[suffix_start_pos] = '\0';
 
-        plugin = nfc_supported_cards_get_plugin(instance, instance->file_name, api_interface);
-    } while(plugin == NULL); //-V654
+        return true;
+    }
+    return false;
+}
 
-    return plugin;
+static void nfc_supported_cards_cache_metadata(
+    NfcSupportedCardsPluginCache* cache,
+    const NfcSupportedCardsPlugin* plugin) {
+    cache->protocol = plugin->protocol;
+    cache->feature = 0;
+    if(plugin->verify) cache->feature |= NfcSupportedCardsPluginFeatureHasVerify;
+    if(plugin->read) cache->feature |= NfcSupportedCardsPluginFeatureHasRead;
+    if(plugin->parse) cache->feature |= NfcSupportedCardsPluginFeatureHasParse;
+    cache->metadata_loaded = true;
 }
 
 void nfc_supported_cards_load_cache(NfcSupportedCards* instance) {
@@ -175,29 +183,16 @@ void nfc_supported_cards_load_cache(NfcSupportedCards* instance) {
 
         instance->load_context = nfc_supported_cards_load_context_alloc();
 
-        while(true) {
-            const ElfApiInterface* api_interface =
-                composite_api_resolver_get(instance->api_resolver);
-            const NfcSupportedCardsPlugin* plugin =
-                nfc_supported_cards_get_next_plugin(instance->load_context, api_interface);
-            if(plugin == NULL) break; //-V547
-
+        /* Listing filenames does not require mapping every ELF into executable
+         * memory. Discover protocol/features only when a parser is tried. */
+        while(nfc_supported_cards_get_next_name(instance->load_context)) {
             NfcSupportedCardsPluginCache plugin_cache = {}; //-V779
             plugin_cache.name = furi_string_alloc_set(instance->load_context->file_name);
-            plugin_cache.protocol = plugin->protocol;
-            if(plugin->verify) {
-                plugin_cache.feature |= NfcSupportedCardsPluginFeatureHasVerify;
-            }
-            if(plugin->read) {
-                plugin_cache.feature |= NfcSupportedCardsPluginFeatureHasRead;
-            }
-            if(plugin->parse) {
-                plugin_cache.feature |= NfcSupportedCardsPluginFeatureHasParse;
-            }
             NfcSupportedCardsPluginCache_push_back(instance->plugins_cache_arr, plugin_cache);
         }
 
         nfc_supported_cards_load_context_free(instance->load_context);
+        instance->load_context = NULL;
 
         size_t plugins_loaded = NfcSupportedCardsPluginCache_size(instance->plugins_cache_arr);
         if(plugins_loaded == 0) {
@@ -231,14 +226,18 @@ bool nfc_supported_cards_read(NfcSupportedCards* instance, NfcDevice* device, Nf
             !NfcSupportedCardsPluginCache_end_p(iter);
             NfcSupportedCardsPluginCache_next(iter)) {
             NfcSupportedCardsPluginCache* plugin_cache = NfcSupportedCardsPluginCache_ref(iter);
-            if(plugin_cache->protocol != protocol) continue;
-            if((plugin_cache->feature & NfcSupportedCardsPluginFeatureHasRead) == 0) continue;
+            if(plugin_cache->metadata_loaded &&
+               (plugin_cache->protocol != protocol ||
+                (plugin_cache->feature & NfcSupportedCardsPluginFeatureHasRead) == 0))
+                continue;
 
             const ElfApiInterface* api_interface =
                 composite_api_resolver_get(instance->api_resolver);
             const NfcSupportedCardsPlugin* plugin = nfc_supported_cards_get_plugin(
                 instance->load_context, furi_string_get_cstr(plugin_cache->name), api_interface);
             if(plugin == NULL) continue;
+            nfc_supported_cards_cache_metadata(plugin_cache, plugin);
+            if(plugin->protocol != protocol) continue;
 
             if(plugin->verify) {
                 if(!plugin->verify(nfc)) continue;
@@ -253,6 +252,7 @@ bool nfc_supported_cards_read(NfcSupportedCards* instance, NfcDevice* device, Nf
         }
 
         nfc_supported_cards_load_context_free(instance->load_context);
+        instance->load_context = NULL;
     } while(false);
 
     return card_read;
@@ -283,14 +283,18 @@ bool nfc_supported_cards_parse(
             !NfcSupportedCardsPluginCache_end_p(iter);
             NfcSupportedCardsPluginCache_next(iter)) {
             NfcSupportedCardsPluginCache* plugin_cache = NfcSupportedCardsPluginCache_ref(iter);
-            if(plugin_cache->protocol != protocol) continue;
-            if((plugin_cache->feature & NfcSupportedCardsPluginFeatureHasParse) == 0) continue;
+            if(plugin_cache->metadata_loaded &&
+               (plugin_cache->protocol != protocol ||
+                (plugin_cache->feature & NfcSupportedCardsPluginFeatureHasParse) == 0))
+                continue;
 
             const ElfApiInterface* api_interface =
                 composite_api_resolver_get(instance->api_resolver);
             const NfcSupportedCardsPlugin* plugin = nfc_supported_cards_get_plugin(
                 instance->load_context, furi_string_get_cstr(plugin_cache->name), api_interface);
             if(plugin == NULL) continue;
+            nfc_supported_cards_cache_metadata(plugin_cache, plugin);
+            if(plugin->protocol != protocol) continue;
 
             if(plugin->parse) {
                 if(plugin->parse(device, parsed_data)) {
@@ -301,6 +305,7 @@ bool nfc_supported_cards_parse(
         }
 
         nfc_supported_cards_load_context_free(instance->load_context);
+        instance->load_context = NULL;
     } while(false);
 
     return card_parsed;

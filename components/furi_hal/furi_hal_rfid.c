@@ -21,6 +21,10 @@
 
 #define TAG "FuriHalRfid"
 
+bool furi_hal_rfid_is_supported(void) {
+    return BOARD_HAS_RFID != 0;
+}
+
 #if BOARD_HAS_RFID
 
 #include <driver/uart.h>

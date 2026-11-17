@@ -233,7 +233,13 @@ build_for_target() {
     local BOARD="$1"
     local IDF_TARGET="$2"
     local TOOLCHAIN="$3"
-    local FW_BUILD_DIR="$4"
+    # Reuse a reviewed out-of-tree firmware configuration without copying it
+    # into build_t_embed or rebuilding the whole firmware just to build an app.
+    local FW_BUILD_DIR="${FAP_BUILD_DIR:-$4}"
+    case "$FW_BUILD_DIR" in
+        /*|[A-Za-z]:/*) ;;
+        *) FW_BUILD_DIR="$PROJECT_DIR/$FW_BUILD_DIR" ;;
+    esac
 
     local CC="${TOOLCHAIN}-gcc"
     local CXX="${TOOLCHAIN}-g++"
@@ -246,13 +252,13 @@ build_for_target() {
         return 0
     fi
 
-    if [ ! -d "$PROJECT_DIR/$FW_BUILD_DIR/config" ]; then
+    if [ ! -d "$FW_BUILD_DIR/config" ]; then
         echo "  SKIP $BOARD: firmware not built ($FW_BUILD_DIR/config missing)"
         return 0
     fi
 
-    local BUILD_DIR="$PROJECT_DIR/$FW_BUILD_DIR/fap/$(basename "$APP_DIR")"
-    local OUTPUT_DIR="$PROJECT_DIR/$FW_BUILD_DIR/fap"
+    local BUILD_DIR="$FW_BUILD_DIR/fap/$(basename "$APP_DIR")"
+    local OUTPUT_DIR="$FW_BUILD_DIR/fap"
     local OUTPUT="$OUTPUT_DIR/$FAP_FILENAME"
     # dirname of OUTPUT so FAP_OUTPUT_NAME may carry a subpath (embedded plugins
     # land under <appid>_assets/plugins/<plugin>.fal).
@@ -265,7 +271,7 @@ build_for_target() {
     local -a TARGET_INCLUDES=()
     local -a TARGET_CFLAGS=()
 
-    TARGET_INCLUDES+=(-I"$PROJECT_DIR/$FW_BUILD_DIR/config")
+    TARGET_INCLUDES+=(-I"$FW_BUILD_DIR/config")
     TARGET_INCLUDES+=(-I"$IDF/esp_hw_support/include/soc/$IDF_TARGET")
 
     if [ "$IDF_TARGET" = "esp32s3" ]; then

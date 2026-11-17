@@ -6,6 +6,7 @@ import runpy
 from unittest.mock import patch
 from pathlib import Path
 from dualboot_bundle import inspect_image, check_write_ranges, read_csv, read_table, EXPECTED
+from build_dualboot import check_bruce_source, BRUCE_COMMIT, BRUCE_RELEASE
 
 def image(project="furi_esp32", version="2.0.0-db1", chip=9):
     header = bytearray(24)
@@ -93,5 +94,37 @@ class BundleTests(unittest.TestCase):
         self.assertNotIn("dualboot_settings", self.apps("lilygo_t_embed_cc1101", "OFF"))
     def test_no_other_boards(self):
         self.assertNotIn("dualboot_settings", self.apps("waveshare_c6", "ON"))
+
+class StableSourceTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        (self.root / ".git").mkdir()
+        (self.root / "src/core").mkdir(parents=True)
+        (self.root / "platformio.ini").write_text(f"-DBRUCE_VERSION='\"{BRUCE_RELEASE}\"'")
+        (self.root / "src/core/dualboot_app_desc.c").write_text(f'.version = "{BRUCE_RELEASE}-db1"')
+
+    def test_matching_stable_source(self):
+        with patch("build_dualboot.subprocess.check_output", return_value=BRUCE_COMMIT + "\n"):
+            check_bruce_source(self.root)
+
+    def test_wrong_upstream_commit_is_rejected(self):
+        with patch("build_dualboot.subprocess.check_output", return_value="59e83bfbd8a63a6b67ea23498e15c710a1ed9657\n"):
+            with self.assertRaisesRegex(ValueError, f"stable {BRUCE_RELEASE}"):
+                check_bruce_source(self.root)
+
+    def test_dev_display_is_rejected_even_at_release_commit(self):
+        (self.root / "platformio.ini").write_text("-DBRUCE_VERSION='\"dev\"'")
+        with patch("build_dualboot.subprocess.check_output", return_value=BRUCE_COMMIT):
+            with self.assertRaisesRegex(ValueError, "not dev"):
+                check_bruce_source(self.root)
+
+    def test_old_companion_descriptor_is_rejected(self):
+        (self.root / "src/core/dualboot_app_desc.c").write_text('.version = "1.16-db1"')
+        with patch("build_dualboot.subprocess.check_output", return_value=BRUCE_COMMIT):
+            with self.assertRaisesRegex(ValueError, "descriptor"):
+                check_bruce_source(self.root)
+
 
 if __name__ == "__main__": unittest.main()

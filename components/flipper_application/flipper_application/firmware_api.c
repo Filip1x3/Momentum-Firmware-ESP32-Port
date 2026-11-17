@@ -79,6 +79,7 @@
 #include <furi_hal_speaker.h>
 #include <furi_hal_display.h>
 #include <furi_hal_bt.h>
+#include <furi_hal_rfid.h>
 #include <locale/locale.h>
 /* NFC supported_cards parser plugin API symbols. The `nfc` component exports
  * components/nfc ("." ) so the transitive <protocols/...> includes resolve. */
@@ -530,6 +531,7 @@ static const struct sym_entry firmware_api_table[] = {
     { .hash = 0x25f7575f, .address = (uint32_t)ble_profile_serial_set_event_callback }, /* ble_profile_serial_set_event_callback */
     { .hash = 0x2649f22e, .address = (uint32_t)furi_mutex_free }, /* furi_mutex_free */
     { .hash = 0x2688dd53, .address = (uint32_t)furi_delay_tick }, /* furi_delay_tick */
+    { .hash = 0x26a3e133, .address = (uint32_t)furi_hal_rfid_is_supported }, /* furi_hal_rfid_is_supported */
     { .hash = 0x26aafac2, .address = (uint32_t)&g_wifi_osi_funcs }, /* g_wifi_osi_funcs */
     { .hash = 0x26d193ca, .address = (uint32_t)dialog_ex_get_view }, /* dialog_ex_get_view */
     { .hash = 0x26f1264d, .address = (uint32_t)furi_message_queue_alloc }, /* furi_message_queue_alloc */

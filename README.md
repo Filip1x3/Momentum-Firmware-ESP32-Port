@@ -36,6 +36,28 @@ this port does not give the ESP32 every peripheral of a Flipper Zero.
 
 ## What changed from the base ESP32 port
 
+### v0.2.1 update
+
+- Removed **Update Firmware** from Settings → System; maintenance/bootloader
+  access remains available.
+- Updated the optional companion to stable **Bruce 1.17**, preserving the
+  Momentum return menu, separate NVS and `/bruce` SD directory. The display no
+  longer incorrectly identifies the companion as `dev`.
+- Web flasher: verified/retried USB reads and recognized older Momentum layouts,
+  without allowing unknown/corrupt layouts to bypass data protection.
+- Application lifecycle fixes for Caesar Cipher, Bomberduck and ProtoPirate
+  Receive, with matching FAPs in the updated **sdcard.zip**.
+- Bluetooth startup/cleanup fixes, lazy NFC parser loading and buffered IR
+  universal-remote indexing. Standalone 125 kHz RFID requires external hardware.
+- Bounds and information-element length checks for WiFi beacon serialization.
+
+Download [v0.2.1](https://github.com/Filip1x3/Momentum-Firmware-ESP32-Port/releases/tag/v0.2.1)
+or use the [Web Flasher](https://momentum-esp32-port.pages.dev/).
+Install the matching SD archive as well as the firmware. See the
+[application fixes](docs/BUGFIXES_20261023.md),
+[flasher verification](docs/FIXES_20261027.md) and
+[Bruce 1.17 integration](docs/DUALBOOT.md) for validation and remaining hardware-test limits.
+
 ### v0.2.0 update
 
 - Two separate installers: **Momentum only** and **Momentum + Bruce Dual Boot**.
@@ -227,8 +249,8 @@ write to `build_t_embed/`; `flasher_args.json` there is the source of truth for
 that build's flash files and offsets. GitHub Actions are not configured in this repository.
 The web flasher is maintained separately and is not included here.
 
-For Dual Boot, download the [matching Bruce source archive](third_party/bruce-dualboot/bruce-dualboot-source-v0.2.0.zip),
-extract it and use `tools/build_dualboot.py --bruce-dir /path/to/Bruce-Momentum-DualBoot`
+For Dual Boot, download the [matching Bruce source archive](third_party/bruce-dualboot/bruce-dualboot-source-1.17.zip),
+extract it and use `tools/build_dualboot.py --bruce-dir /path/to/Bruce-Momentum-DualBoot-Stable-1.17`
 in an exported ESP-IDF shell with PlatformIO installed. The archive includes
 the complete modified companion source, build configuration and GPL license.
 
@@ -254,7 +276,7 @@ the complete modified companion source, build configuration and GPL license.
 - [Next-Flip / Momentum Firmware](https://github.com/Next-Flip/Momentum-Firmware)
   — Momentum code, interface and assets adapted for this fork.
 - [BruceDevices / Bruce](https://github.com/BruceDevices/firmware)
-  — optional Bruce 1.16 companion. Corresponding modified source and its GPL-3.0
+  — optional stable Bruce 1.17 companion. Corresponding modified source and its GPL-3.0
   license are supplied with the Dual Boot release.
 - [Flipper Devices](https://github.com/flipperdevices/flipperzero-firmware)
   and the respective application/library contributors.

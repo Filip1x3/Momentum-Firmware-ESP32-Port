@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build both local companions and create a validated, non-destructive bundle.
 
-Requires an exported ESP-IDF 5.4.1 environment and the modified Bruce 1.16 tree.
+Requires an exported ESP-IDF 5.4.1 environment and the modified Bruce 1.17 tree.
 No serial connection, flashing, Git push or website deployment is performed.
 """
 from __future__ import annotations
@@ -14,23 +14,30 @@ import sys
 from pathlib import Path
 from dualboot_bundle import ROOT, make_bundle, read_csv, require
 
-BRUCE_COMMIT = "59e83bfbd8a63a6b67ea23498e15c710a1ed9657"
+BRUCE_RELEASE = "1.17"
+BRUCE_COMMIT = "2b6ba4d490bfcf94ce2574c6154537dbd5838c3d"
 
 def check_bruce_source(bruce):
     if (bruce / ".git").exists():
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=bruce, text=True).strip()
-        require(commit == BRUCE_COMMIT, "Bruce source must be the reviewed stable 1.16 commit")
-        return
-    metadata = json.loads((bruce / "RELEASE-SOURCE.json").read_text(encoding="utf-8"))
-    require(metadata.get("schema") == 1 and metadata.get("base_commit") == BRUCE_COMMIT,
-            "Use the matching corresponding-source archive from the firmware release")
-    files = metadata.get("files", {})
-    require("src/core/dualboot_nvs.c" in files and "platformio.ini" in files and "LICENSE" in files,
-            "Incomplete companion source manifest")
-    for name, expected in files.items():
-        path = (bruce / name).resolve()
-        require(path.is_relative_to(bruce) and path.is_file(), f"Missing/unsafe source path: {name}")
-        require(hashlib.sha256(path.read_bytes()).hexdigest() == expected, f"Source snapshot changed: {name}")
+        require(commit == BRUCE_COMMIT, f"Bruce source must be the reviewed stable {BRUCE_RELEASE} commit")
+    else:
+        metadata = json.loads((bruce / "RELEASE-SOURCE.json").read_text(encoding="utf-8"))
+        require(metadata.get("schema") == 1 and metadata.get("base_commit") == BRUCE_COMMIT,
+                "Use the matching corresponding-source archive from the firmware release")
+        files = metadata.get("files", {})
+        require("src/core/dualboot_nvs.c" in files and "platformio.ini" in files and "LICENSE" in files,
+                "Incomplete companion source manifest")
+        for name, expected in files.items():
+            path = (bruce / name).resolve()
+            require(path.is_relative_to(bruce) and path.is_file(), f"Missing/unsafe source path: {name}")
+            require(hashlib.sha256(path.read_bytes()).hexdigest() == expected, f"Source snapshot changed: {name}")
+    ini = (bruce / "platformio.ini").read_text(encoding="utf-8")
+    descriptor = (bruce / "src/core/dualboot_app_desc.c").read_text(encoding="utf-8")
+    require(f"-DBRUCE_VERSION='\"{BRUCE_RELEASE}\"'" in ini and "-DBRUCE_VERSION='\"dev\"'" not in ini,
+            "Companion UI version must identify its stable release, not dev")
+    require(f'.version = "{BRUCE_RELEASE}-db1"' in descriptor,
+            "Companion app descriptor does not match the stable Dual Boot release")
 
 def run(arguments, directory):
     print("Running:", subprocess.list2cmdline([str(arg) for arg in arguments]), flush=True)
@@ -46,7 +53,7 @@ def run(arguments, directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bruce-dir", type=Path, default=ROOT.parent / "Bruce-Momentum-DualBoot")
+    parser.add_argument("--bruce-dir", type=Path, default=ROOT.parent / f"Bruce-Momentum-DualBoot-Stable-{BRUCE_RELEASE}")
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build_dualboot")
     parser.add_argument("--output", type=Path, default=ROOT / "build_dualboot_bundle")
     parser.add_argument("--pio", default="pio")

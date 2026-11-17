@@ -17,6 +17,11 @@ extern "C" {
  */
 void furi_hal_rfid_init(void);
 
+/** Whether this build is configured with a 125 kHz reader backend.
+ * This is a board capability, not a runtime external-module probe.
+ */
+bool furi_hal_rfid_is_supported(void);
+
 /** Config rfid pins to reset state
  */
 void furi_hal_rfid_pins_reset(void);

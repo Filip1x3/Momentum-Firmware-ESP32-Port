@@ -1,7 +1,7 @@
 # Momentum / Bruce Dual Boot (experimental)
 
 This is a separate build profile for **LilyGo T-Embed CC1101, ESP32-S3, 16 MiB flash / 8 MiB PSRAM**.
-Available as the separate v0.2.0 Dual Boot installer. The updated web flasher
+Available as the separate v0.2.1 Dual Boot installer with stable Bruce 1.17. The updated web flasher
 understands both layouts; old normal-only updaters do not. The normal firmware
 profile retains its standard update layout and has no Dual Boot menu.
 Switching in both directions and normal app entry have been checked on a
@@ -72,18 +72,23 @@ separate files and validated offsets; neither NVS nor LittleFS is included.
 
 ## Build locally
 
-Sources used: [Bruce 1.16](https://github.com/BruceDevices/firmware/tree/1.16),
-commit `59e83bfbd8a63a6b67ea23498e15c710a1ed9657` with the port modifications
-in the [matching source archive](../third_party/bruce-dualboot/bruce-dualboot-source-v0.2.0.zip)
+Current companion sources: [stable Bruce 1.17](https://github.com/BruceDevices/firmware/tree/1.17),
+commit `2b6ba4d490bfcf94ce2574c6154537dbd5838c3d` with the port modifications
+in the [matching source archive](../third_party/bruce-dualboot/bruce-dualboot-source-1.17.zip)
 stored in this repository, outside the release's BIN/SD attachments.
 The archive contains full source, dependency/build configuration, a file-hash
 manifest and the upstream GPL-3.0 license. Retain all upstream license notices.
 No attack modules are modified by the dual-boot integration.
+The UI version is `1.17` and the isolated app descriptor is `1.17-db1`.
+This uses the official release tag, published on 2026-11-12, including its pinned
+display/NFC submodules. The matching source archive includes those library sources.
+The historical v0.2.0 source archive is retained for reproducing that release
+with its matching port tag. Current tooling requires the new stable source.
 
 In an exported ESP-IDF 5.4.1 shell with PlatformIO/pioarduino available:
 
 ```text
-python tools/build_dualboot.py --bruce-dir ../Bruce-Momentum-DualBoot
+python tools/build_dualboot.py --bruce-dir ../Bruce-Momentum-DualBoot-Stable-1.17
 ```
 
 This compiles the two app-only images, checks both partition tables, image
@@ -96,6 +101,27 @@ by the build post-hook and is never included in the validated bundle. Do not ren
 it back or flash it; its layout is not an installer for this firmware pair.
 
 ## Verification
+
+Local update verification on 2026-11-17 used the official Bruce 1.17 tag at
+`2b6ba4d490bfcf94ce2574c6154537dbd5838c3d`. The 8 companion Python checks,
+31 bundle/source-export checks and native NVS, SD-path and logo checks passed.
+Both firmware images compiled. The bundle validator checked image integrity,
+matching partition tables, safe flash ranges and all 12 protection wrappers in
+the linked Bruce ELF/map.
+
+The resulting companion is `bruce_mntm_db1` / `1.17-db1`, 4,591,616 bytes,
+SHA-256 `348d740985756b5151ac5610b6d40f9888e39633378019feb7c76ab7c58dfa8b`.
+The matching Momentum image is `furi_esp32` / `2.0.0-db1`, 3,656,864 bytes,
+SHA-256 `85f9f31a0b9535870792921ae7b3bca1b78b40a57cef75231beb040193b0da8b`.
+The local bundle includes five segmented images, its manifest and flash offsets.
+Bruce's upstream display/BLE type and audio-codec bounds warnings remain in the
+build log. The two application images were flashed to the known development
+T-Embed on 2026-11-17 and device verification matched both digests. Before reboot,
+readback confirmed the partition table, Momentum NVS/PHY, boot selector and
+Bruce NVS were byte-identical to the fresh private backup. The bootloader and
+data partitions were excluded from the writes. A watchdog reset was requested.
+Booting Bruce, SD/file access, power and returning to Momentum still need
+physical acceptance.
 
 Host tests:
 

@@ -59,7 +59,8 @@ static void rpc_command_callback(const RpcAppSystemEvent* event, void* context) 
 }
 
 static LfRfid* lfrfid_alloc(void) {
-    LfRfid* lfrfid = malloc(sizeof(LfRfid));
+    LfRfid* lfrfid = calloc(1, sizeof(LfRfid));
+    furi_check(lfrfid);
 
     lfrfid->storage = furi_record_open(RECORD_STORAGE);
     lfrfid->dialogs = furi_record_open(RECORD_DIALOGS);
@@ -336,6 +337,19 @@ void lfrfid_make_app_folder(LfRfid* app) {
     if(!storage_simply_mkdir(app->storage, LFRFID_APP_FOLDER)) {
         dialog_message_show_storage_error(app->dialogs, "Cannot create\napp folder");
     }
+}
+
+void lfrfid_show_read_hardware_required(LfRfid* app) {
+    dialog_ex_reset(app->dialog_ex);
+    dialog_ex_set_header(app->dialog_ex, "125 kHz RFID", 64, 0, AlignCenter, AlignTop);
+    dialog_ex_set_text(
+        app->dialog_ex,
+        "External reader required.\nNo built-in 125 kHz radio.\nPN532 is 13.56 MHz NFC.",
+        64,
+        17,
+        AlignCenter,
+        AlignTop);
+    view_dispatcher_switch_to_view(app->view_dispatcher, LfRfidViewDialogEx);
 }
 
 void lfrfid_text_store_set(LfRfid* app, const char* text, ...) {

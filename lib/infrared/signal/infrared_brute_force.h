@@ -44,10 +44,11 @@ void infrared_brute_force_free(InfraredBruteForce* brute_force);
 void infrared_brute_force_set_db_filename(InfraredBruteForce* brute_force, const char* db_filename);
 
 /**
- * @brief Build a signal dictionary from a previously set database file.
+ * @brief Build a name/offset index from a previously set database file.
  *
  * This function must be called each time after setting the database via
  * a infrared_brute_force_set_db_filename() call.
+ * Signal bodies are decoded and validated on demand before transmission.
  *
  * @param[in,out] brute_force pointer to the instance to be updated.
  * @returns InfraredErrorCodeNone on success, otherwise error code.

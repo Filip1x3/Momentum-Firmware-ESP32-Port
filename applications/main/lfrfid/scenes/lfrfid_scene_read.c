@@ -46,6 +46,11 @@ static void
 void lfrfid_scene_read_on_enter(void* context) {
     LfRfid* app = context;
 
+    if(!furi_hal_rfid_is_supported()) {
+        lfrfid_show_read_hardware_required(app);
+        return;
+    }
+
     if(app->read_type == LFRFIDWorkerReadTypePSKOnly) {
         lfrfid_view_read_set_read_mode(app->read_view, LfRfidReadPskOnly);
     } else if(app->read_type == LFRFIDWorkerReadTypeASKOnly) {
@@ -63,6 +68,8 @@ void lfrfid_scene_read_on_enter(void* context) {
 bool lfrfid_scene_read_on_event(void* context, SceneManagerEvent event) {
     LfRfid* app = context;
     bool consumed = false;
+
+    if(!furi_hal_rfid_is_supported()) return false;
 
     if(event.type == SceneManagerEventTypeCustom) {
         if(event.event == LfRfidEventReadSenseStart) {
@@ -101,6 +108,10 @@ bool lfrfid_scene_read_on_event(void* context, SceneManagerEvent event) {
 
 void lfrfid_scene_read_on_exit(void* context) {
     LfRfid* app = context;
+    if(!furi_hal_rfid_is_supported()) {
+        dialog_ex_reset(app->dialog_ex);
+        return;
+    }
     notification_message(app->notifications, &sequence_blink_stop);
     popup_reset(app->popup);
     lfrfid_worker_stop(app->lfworker);

@@ -21,6 +21,17 @@ struct ProtoPirateReceiver {
     void* context;
 };
 
+void protopirate_view_receiver_lock_history(ProtoPirateReceiver* receiver) {
+    furi_check(receiver);
+    /* view_get_model takes the very same mutex used by GUI draw/input. */
+    (void)view_get_model(receiver->view);
+}
+
+void protopirate_view_receiver_unlock_history(ProtoPirateReceiver* receiver) {
+    furi_check(receiver);
+    view_commit_model(receiver->view, false);
+}
+
 typedef struct {
     ProtoPirateHistory* history;
     uint8_t list_offset;

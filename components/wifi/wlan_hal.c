@@ -1,4 +1,5 @@
 #include "wlan_hal.h"
+#include "beacon_frame.h"
 
 #include <esp_wifi.h>
 #include <esp_private/wifi.h>
@@ -593,7 +594,7 @@ static const uint8_t beacon_packet_template[] = {
     0x00, 0x00, 0xe8, 0x03, 0x31, 0x00, 0x00, 0x20, 0x20, 0x20,
     0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
     0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x01, 0x08,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x01, 0x08,
     0x82, 0x84, 0x8b, 0x96, 0x24, 0x30, 0x48, 0x6c, 0x03, 0x01,
     0x01, 0x30, 0x18, 0x01, 0x00, 0x00, 0x0f, 0xac, 0x02, 0x02,
     0x00, 0x00, 0x0f, 0xac, 0x04, 0x00, 0x0f, 0xac, 0x04, 0x01,
@@ -629,16 +630,13 @@ static TaskHandle_t s_beacon_task = NULL;
 static WlanHalBeaconMode s_beacon_mode = WlanHalBeaconModeFunny;
 static char s_beacon_base_ssid[33] = {0};
 
-static void prepare_beacon_packet(uint8_t* packet, const uint8_t* mac,
+static size_t prepare_beacon_packet(uint8_t* packet, const uint8_t* mac,
                                   const char* ssid, uint8_t channel) {
     memcpy(packet, beacon_packet_template, sizeof(beacon_packet_template));
     memcpy(&packet[10], mac, 6);
     memcpy(&packet[16], mac, 6);
-    uint8_t ssid_len = (uint8_t)strlen(ssid);
-    if(ssid_len > 32) ssid_len = 32;
-    packet[37] = ssid_len;
-    memcpy(&packet[38], ssid, ssid_len);
-    packet[82] = channel;
+    size_t length = sizeof(beacon_packet_template);
+    return wlan_beacon_frame_set_ssid(packet, &length, sizeof(beacon_packet_template), ssid, channel) ? length : 0;
 }
 
 static void beacon_spam_task(void* param) {
@@ -690,9 +688,8 @@ static void beacon_spam_task(void* param) {
         for(int i = 0; i < 6; i++) mac[i] = rand() & 0xFF;
         mac[0] = (mac[0] & 0xFE) | 0x02;
 
-        prepare_beacon_packet(packet, mac, current_ssid, channel);
-        if(esp_wifi_80211_tx(WIFI_IF_STA, packet,
-               sizeof(beacon_packet_template), false) == ESP_OK) {
+        size_t packet_size = prepare_beacon_packet(packet, mac, current_ssid, channel);
+        if(packet_size && esp_wifi_80211_tx(WIFI_IF_STA, packet, packet_size, false) == ESP_OK) {
             s_beacon_frames++;
         }
 

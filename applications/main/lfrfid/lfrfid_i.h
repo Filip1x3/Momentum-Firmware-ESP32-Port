@@ -144,6 +144,8 @@ bool lfrfid_save_key_data(LfRfid* app, FuriString* path);
 
 void lfrfid_make_app_folder(LfRfid* app);
 
+void lfrfid_show_read_hardware_required(LfRfid* app);
+
 void lfrfid_text_store_set(LfRfid* app, const char* text, ...);
 
 void lfrfid_text_store_clear(LfRfid* app);

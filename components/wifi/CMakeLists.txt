@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "wlan_hal.c"
+        "beacon_frame.c"
         "wlan_passwords.c"
         "wifi_settings.c"
         "wifi_service.c"

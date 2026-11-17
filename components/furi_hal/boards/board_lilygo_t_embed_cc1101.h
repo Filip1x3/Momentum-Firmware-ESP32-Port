@@ -138,9 +138,14 @@
 #define BOARD_HAS_SPEAKER       1
 #define BOARD_HAS_IR            1
 #define BOARD_HAS_IBUTTON       0
-#define BOARD_HAS_RFID          1
+/* The built-in PN532 is 13.56 MHz NFC, not a 125 kHz reader. An external
+ * RDM6300 may be enabled explicitly by a custom build after wiring it. */
+#ifndef BOARD_HAS_RFID
+#define BOARD_HAS_RFID          0
+#endif
 
-/* ---- RFID / RDM6300 (UART, 125kHz read-only) ---- */
+/* ---- Optional external RDM6300 (UART, 125kHz read-only) ----
+ * These expansion pins are also NRF24 CS/CE; do not use both together. */
 #define BOARD_PIN_RFID_RX       44      /* GROVE / SERIAL_RX */
 #define BOARD_PIN_RFID_TX       43      /* GROVE / SERIAL_TX */
 #define BOARD_RFID_UART_NUM     1       /* UART1 */

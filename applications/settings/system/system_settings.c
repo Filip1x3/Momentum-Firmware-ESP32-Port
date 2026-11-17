@@ -216,10 +216,10 @@ static uint32_t system_settings_exit(void* context) {
 static void system_settings_enter(void* context, uint32_t index) {
     SystemSettings* app = context;
     if(index < 7) return;
-    static const char* const targets[] = {"Others", "qFlipper Settings", "wlan"};
+    static const char* const targets[] = {"Others", "qFlipper Settings"};
     if(index - 7 >= COUNT_OF(targets)) return;
     Loader* loader = furi_record_open(RECORD_LOADER);
-    loader_enqueue_launch(loader, targets[index - 7], index == 9 ? "update" : NULL,
+    loader_enqueue_launch(loader, targets[index - 7], NULL,
                          LoaderDeferredLaunchFlagGui);
     furi_record_close(RECORD_LOADER);
     view_dispatcher_stop(app->view_dispatcher);
@@ -293,7 +293,6 @@ SystemSettings* system_settings_alloc(void) {
     variable_item_set_current_value_text(item, filename_scheme[value_index]);
     variable_item_list_add(app->var_item_list, "Others", 1, NULL, app);
     variable_item_list_add(app->var_item_list, "qFlipper Settings", 1, NULL, app);
-    variable_item_list_add(app->var_item_list, "Update Firmware", 1, NULL, app);
     variable_item_list_set_enter_callback(app->var_item_list, system_settings_enter, app);
 
     view_set_previous_callback(

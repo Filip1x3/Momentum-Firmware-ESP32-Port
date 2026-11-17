@@ -101,11 +101,12 @@ static void caesar_cipher_state_free(CaesarState* const caesar_state) {
     free(caesar_state);
 }
 
-int32_t caesar_cipher_app() {
-    CaesarState* caesar_state = malloc(sizeof(CaesarState));
-
-    FURI_LOG_D("caesar_cipher", "Running caesar_cipher_state_init");
-    caesar_cipher_state_init(caesar_state);
+int32_t caesar_cipher_app(void* context) {
+    UNUSED(context);
+    // TextInput reads the initial buffer when registering it. Do not rely on
+    // the target allocator (or the FAP build shim) returning zeroed memory.
+    CaesarState* caesar_state = calloc(1, sizeof(CaesarState));
+    if(!caesar_state) return 255;
 
     caesar_state->mutex = furi_mutex_alloc(FuriMutexTypeNormal);
     if(!caesar_state->mutex) {
@@ -113,6 +114,9 @@ int32_t caesar_cipher_app() {
         free(caesar_state);
         return 255;
     }
+
+    FURI_LOG_D("caesar_cipher", "Running caesar_cipher_state_init");
+    caesar_cipher_state_init(caesar_state);
 
     FURI_LOG_D("caesar_cipher", "Assigning text input callback");
     text_input_set_result_callback(
@@ -144,9 +148,8 @@ int32_t caesar_cipher_app() {
     view_dispatcher_switch_to_view(caesar_state->view_dispatcher, 0);
     view_dispatcher_run(caesar_state->view_dispatcher);
 
-    furi_record_close("gui");
-    furi_mutex_free(caesar_state->mutex);
     caesar_cipher_state_free(caesar_state);
+    furi_record_close("gui");
 
     return 0;
 }

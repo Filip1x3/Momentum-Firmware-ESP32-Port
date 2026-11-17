@@ -84,6 +84,9 @@ struct ProtoPirateApp {
     bool auto_save;
     bool check_saved;
     bool radio_initialized;
+    /* Uses the former alignment padding: keep all existing plugin offsets.
+     * Set under the receiver model lock; polled by the scene tick. */
+    bool receiver_history_dirty;
     uint32_t start_tx_time;
     uint8_t tx_power;
     char save_filename[64];
@@ -116,6 +119,11 @@ struct ProtoPirateApp {
     uint8_t tool_scene_nav_pending;
     uint32_t tool_scene_nav_target;
 };
+
+_Static_assert(
+    offsetof(ProtoPirateApp, receiver_history_dirty) + sizeof(bool) ==
+        offsetof(ProtoPirateApp, start_tx_time),
+    "RX dirty flag must use existing padding to preserve plugin ABI");
 
 #ifdef ENABLE_EMULATE_FEATURE
 void protopirate_emulate_context_release(ProtoPirateApp* app);

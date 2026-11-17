@@ -36,9 +36,10 @@ NfcSupportedCards* nfc_supported_cards_alloc(CompositeApiResolver* api_resolver)
 void nfc_supported_cards_free(NfcSupportedCards* instance);
 
 /**
- * @brief Load plugins information to cache.
+ * @brief Cache available plugin filenames without loading their executable code.
  *
- * @note This function must be called before calling read and parse fanctions.
+ * @note Read and parse call this automatically. Protocol/features are discovered
+ * lazily when each plugin is tried and reused for the lifetime of the NFC app.
  *
  * @param[in, out] instance pointer to NfcSupportedCards instance.
  */

@@ -27,6 +27,10 @@ static void timer_callback(void* context) {
 
 void lfrfid_scene_raw_read_on_enter(void* context) {
     LfRfid* app = context;
+    if(!furi_hal_rfid_is_supported()) {
+        lfrfid_show_read_hardware_required(app);
+        return;
+    }
     Popup* popup = app->popup;
 
     popup_set_icon(popup, 0, 0, &I_NFC_dolphin_emulation_51x64);
@@ -67,6 +71,7 @@ void lfrfid_scene_raw_read_on_enter(void* context) {
 
 bool lfrfid_scene_raw_read_on_event(void* context, SceneManagerEvent event) {
     LfRfid* app = context;
+    if(!furi_hal_rfid_is_supported()) return false;
     Popup* popup = app->popup;
     LfRfidReadRawState* state =
         (LfRfidReadRawState*)scene_manager_get_scene_state(app->scene_manager, LfRfidSceneRawRead);
@@ -129,6 +134,10 @@ bool lfrfid_scene_raw_read_on_event(void* context, SceneManagerEvent event) {
 
 void lfrfid_scene_raw_read_on_exit(void* context) {
     LfRfid* app = context;
+    if(!furi_hal_rfid_is_supported()) {
+        dialog_ex_reset(app->dialog_ex);
+        return;
+    }
     LfRfidReadRawState* state =
         (LfRfidReadRawState*)scene_manager_get_scene_state(app->scene_manager, LfRfidSceneRawRead);
 

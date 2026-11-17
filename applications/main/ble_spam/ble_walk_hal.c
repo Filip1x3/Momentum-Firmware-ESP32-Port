@@ -8,6 +8,7 @@
 #include <esp_log.h>
 #include <furi.h>
 #include <btshim.h>
+#include <bt_stack_lifecycle.h>
 #include <string.h>
 
 #define TAG "BleWalkHal"
@@ -34,6 +35,9 @@ static esp_gatt_if_t s_gattc_if = ESP_GATT_IF_NONE;
 static uint16_t s_conn_id = 0;
 static volatile bool s_connected = false;
 static bool s_hal_started = false;
+// Ownership starts before controller init, not only once GATTC is registered.
+// A failed initialization can still own controller/host allocations.
+static bool s_stack_owned = false;
 static esp_bd_addr_t s_last_connect_addr;
 
 // ---------------------------------------------------------------------------
@@ -230,6 +234,8 @@ bool ble_walk_hal_start(void) {
         ESP_LOGI(TAG, "BLE Walk HAL already started");
         return true;
     }
+    if(s_stack_owned) ble_walk_hal_stop();
+    if(s_stack_owned) return false;
 
     ESP_LOGI(TAG, "Starting BLE Walk HAL...");
 
@@ -237,35 +243,41 @@ bool ble_walk_hal_start(void) {
     bt_stop_stack(bt);
     furi_record_close(RECORD_BT);
     furi_delay_ms(100);
+    if(esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED ||
+       esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE) {
+        ESP_LOGE(TAG, "Previous Bluetooth stack could not be released");
+        return false;
+    }
+    s_stack_owned = true;
 
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     esp_err_t err = esp_bt_controller_init(&bt_cfg);
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "controller init: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
     err = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "controller enable: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     esp_bluedroid_config_t bd_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
     err = esp_bluedroid_init_with_cfg(&bd_cfg);
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "bluedroid init: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
     err = esp_bluedroid_enable();
     if(err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "bluedroid enable: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     err = esp_ble_gap_register_callback(walk_gap_event_handler);
     if(err != ESP_OK) {
         ESP_LOGE(TAG, "gap register: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     // Reset state BEFORE async registration
@@ -277,18 +289,22 @@ bool ble_walk_hal_start(void) {
     err = esp_ble_gattc_register_callback(walk_gattc_event_handler);
     if(err != ESP_OK) {
         ESP_LOGE(TAG, "gattc register: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     err = esp_ble_gattc_app_register(WALK_GATTC_APP_ID);
     if(err != ESP_OK) {
         ESP_LOGE(TAG, "gattc app register: %s", esp_err_to_name(err));
-        return false;
+        goto failed;
     }
 
     // Wait for REG_EVT callback to set s_gattc_if
     for(int i = 0; i < 40 && s_gattc_if == ESP_GATT_IF_NONE; i++) {
         furi_delay_ms(50);
+    }
+    if(s_gattc_if == ESP_GATT_IF_NONE) {
+        ESP_LOGE(TAG, "GATTC registration did not complete");
+        goto failed;
     }
 
     esp_ble_gatt_set_local_mtu(200);
@@ -296,43 +312,51 @@ bool ble_walk_hal_start(void) {
     s_hal_started = true;
     ESP_LOGI(TAG, "BLE Walk HAL ready (gattc_if=%d)", s_gattc_if);
     return true;
+failed:
+    ble_walk_hal_stop();
+    return false;
 }
 
 void ble_walk_hal_stop(void) {
+    if(!s_stack_owned) return;
+    s_hal_started = false;
     ESP_LOGI(TAG, "Stopping BLE Walk HAL...");
 
-    if(s_connected) {
-        esp_ble_gattc_close(s_gattc_if, s_conn_id);
-        furi_delay_ms(100);
-    }
-    if(s_scanning) {
-        esp_ble_gap_stop_scanning();
-        furi_delay_ms(50);
+    // A retry may find the host already disabled/deinitialized while only the
+    // controller's teardown failed. GATT calls are valid only on a live host.
+    if(esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_ENABLED) {
+        if(s_connected && s_gattc_if != ESP_GATT_IF_NONE) {
+            esp_ble_gattc_close(s_gattc_if, s_conn_id);
+            furi_delay_ms(100);
+        }
+        if(s_scanning) {
+            esp_ble_gap_stop_scanning();
+            furi_delay_ms(50);
+        }
+        if(s_gattc_if != ESP_GATT_IF_NONE) {
+            esp_ble_gattc_app_unregister(s_gattc_if);
+            furi_delay_ms(50);
+        }
     }
 
-    esp_ble_gattc_app_unregister(s_gattc_if);
-    furi_delay_ms(50);
-
-    if(esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) {
-        esp_bluedroid_disable();
-        furi_delay_ms(50);
-        esp_bluedroid_deinit();
-        furi_delay_ms(50);
+    esp_err_t result = bt_stack_deinit();
+    if(result != ESP_OK) {
+        ESP_LOGE(TAG, "Bluetooth shutdown failed: %s", esp_err_to_name(result));
+        return; // Keep ownership so another init cannot cover the live stack.
     }
-    if(esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_disable();
-        furi_delay_ms(50);
-    }
-    if(esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-        esp_bt_controller_deinit();
-        furi_delay_ms(50);
-    }
+    s_stack_owned = false;
+    s_connected = false;
+    s_scanning = false;
+    s_gattc_if = ESP_GATT_IF_NONE;
 
     Bt* bt = furi_record_open(RECORD_BT);
-    bt_start_stack(bt);
+    bool restored = bt_profile_restore_default(bt);
     furi_record_close(RECORD_BT);
+    if(!restored) {
+        ESP_LOGW(TAG, "BLE Walk HAL stopped, default Bluetooth profile not restored");
+        return;
+    }
 
-    s_hal_started = false;
     ESP_LOGI(TAG, "BLE Walk HAL stopped");
 }
 

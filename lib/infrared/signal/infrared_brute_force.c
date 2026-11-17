@@ -4,6 +4,8 @@
 #include <m-dict.h>
 #include <m-array.h>
 #include <flipper_format/flipper_format.h>
+#include <flipper_format/flipper_format_i.h>
+#include <toolbox/stream/buffered_file_stream.h>
 
 #include "infrared_signal.h"
 
@@ -96,7 +98,15 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
     Storage* storage = furi_record_open(RECORD_STORAGE);
     FlipperFormat* ff = flipper_format_buffered_file_alloc(storage);
     FuriString* signal_name = furi_string_alloc();
-    InfraredSignal* signal = infrared_signal_alloc();
+
+    /* A retry must not append duplicate offsets to a previous partial index. */
+    InfraredBruteForceRecordDict_it_t it;
+    for(InfraredBruteForceRecordDict_it(it, brute_force->records);
+        !InfraredBruteForceRecordDict_end_p(it);
+        InfraredBruteForceRecordDict_next(it)) {
+        InfraredBruteForceRecord* record = &InfraredBruteForceRecordDict_ref(it)->value;
+        SignalPositionArray_reset(record->signals);
+    }
 
     do {
         if(!flipper_format_buffered_file_open_existing(ff, brute_force->db_filename)) {
@@ -104,22 +114,22 @@ InfraredErrorCode infrared_brute_force_calculate_messages(InfraredBruteForce* br
             break;
         }
 
-        bool signal_valid = false;
+        /* Only build the name/offset index here. Decoding every RAW timings
+         * array before displaying the TV buttons needlessly blocks the menu.
+         * The selected signal is still decoded AND validated before sending. */
         while(infrared_signal_read_name(ff, signal_name) == InfraredErrorCodeNone) {
             size_t signal_start = flipper_format_tell(ff);
-            error = infrared_signal_read_body(signal, ff);
-            signal_valid = (!INFRARED_ERROR_PRESENT(error)) && infrared_signal_is_valid(signal);
-            if(!signal_valid) break;
-
             InfraredBruteForceRecord* record =
                 InfraredBruteForceRecordDict_get(brute_force->records, signal_name);
-            furi_assert(record);
+            /* Databases can contain buttons absent from this remote's panel. */
+            if(!record) continue;
             SignalPositionArray_push_back(record->signals, signal_start);
         }
-        if(!signal_valid) break;
+        if(buffered_file_stream_get_error(flipper_format_get_raw_stream(ff)) != FSE_OK) {
+            error = InfraredErrorCodeFileOperationFailed;
+        }
     } while(false);
 
-    infrared_signal_free(signal);
     furi_string_free(signal_name);
 
     flipper_format_free(ff);
@@ -154,6 +164,8 @@ bool infrared_brute_force_start(
     if(*record_count) {
         Storage* storage = furi_record_open(RECORD_STORAGE);
         brute_force->ff = flipper_format_buffered_file_alloc(storage);
+        /* A missing key must not be satisfied by the following named signal. */
+        flipper_format_set_strict_mode(brute_force->ff, true);
         brute_force->current_signal = infrared_signal_alloc();
         brute_force->is_started = true;
         success =
@@ -194,6 +206,7 @@ bool infrared_brute_force_send(InfraredBruteForce* brute_force, uint32_t signal_
     if(INFRARED_ERROR_PRESENT(
            infrared_signal_read_body(brute_force->current_signal, brute_force->ff)))
         return false;
+    if(!infrared_signal_is_valid(brute_force->current_signal)) return false;
 
     infrared_signal_transmit(brute_force->current_signal);
     return true;

@@ -218,10 +218,13 @@ void protopirate_radio_deinit(ProtoPirateApp* app) {
 #ifndef REMOVE_LOGS
         FURI_LOG_D(TAG, "Stopping active RX, state=%d", app->txrx->txrx_state);
 #endif
+        protopirate_rx_end(app);
+    }
+
+    /* Also handle partially started RX: state alone must not authorize freeing
+     * the receiver while its callback worker can still be running. */
+    if(app->txrx->worker && subghz_worker_is_running(app->txrx->worker)) {
         subghz_worker_stop(app->txrx->worker);
-        if(app->txrx->radio_device) {
-            subghz_devices_stop_async_rx(app->txrx->radio_device);
-        }
     }
 
     protopirate_radio_end_device(app, true);
@@ -238,6 +241,10 @@ void protopirate_radio_deinit(ProtoPirateApp* app) {
     protopirate_unload_protocol_plugin(app->txrx);
 
     if(app->txrx->history) {
+        /* GUI draw callbacks may still run during application shutdown. */
+        if(app->protopirate_receiver) {
+            protopirate_view_receiver_reset_menu(app->protopirate_receiver);
+        }
 #ifndef REMOVE_LOGS
         FURI_LOG_D(TAG, "Freeing history %p", app->txrx->history);
 #endif
